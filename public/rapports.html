@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rapports — Stock Agdal-Ryad</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="js/app.js"></script>
+<style>
+.report-tabs { display:flex; gap:0; border-bottom:2px solid var(--gold-royal); margin-bottom:20px; }
+.report-tab {
+  padding:10px 22px; cursor:pointer; font-size:13px; font-weight:600;
+  border:1px solid var(--gold-royal); border-bottom:none; background:#fff;
+  color:var(--dark-text); transition:.2s; border-radius:6px 6px 0 0;
+  margin-right:4px;
+}
+.report-tab.active { background:var(--green-morocco); color:#fff; border-color:var(--green-morocco); }
+.report-tab:hover:not(.active) { background:#f0f7f3; }
+.report-tab .ar { font-size:10px; display:block; color:inherit; opacity:.8; }
+
+.report-panel { display:none; }
+.report-panel.active { display:block; }
+
+.report-controls {
+  display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;
+  background:#f9f7f2; border:1px solid #e8e0cc; border-radius:8px;
+  padding:14px 16px; margin-bottom:18px;
+}
+.report-controls label { font-size:11px; font-weight:600; color:var(--green-morocco); display:block; margin-bottom:4px; }
+.report-controls input, .report-controls select {
+  padding:7px 10px; border:1px solid #ccc; border-radius:5px;
+  font-size:13px; font-family:'Cairo',sans-serif; min-width:160px;
+}
+.report-controls .ctrl-group { display:flex; flex-direction:column; }
+
+.report-summary {
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:12px; margin-bottom:20px;
+}
+.summary-box {
+  background:#fff; border:1px solid #e8e0cc; border-top:3px solid var(--gold-royal);
+  border-radius:8px; padding:14px 16px; text-align:center;
+}
+.summary-box .s-val { font-size:22px; font-weight:700; color:var(--green-morocco); }
+.summary-box .s-lbl { font-size:11px; color:#666; }
+.summary-box .s-ar { font-size:10px; color:#999; font-family:'Cairo',sans-serif; direction:rtl; }
+
+.report-table-wrap { overflow-x:auto; border-radius:8px; box-shadow:0 1px 6px rgba(0,0,0,.07); }
+.report-table { width:100%; border-collapse:collapse; font-size:12.5px; }
+.report-table th {
+  background:var(--green-morocco); color:#fff; padding:9px 10px;
+  text-align:left; font-weight:600; white-space:nowrap;
+}
+.report-table td { padding:8px 10px; border-bottom:1px solid #eee; vertical-align:middle; }
+.report-table tr:nth-child(even) td { background:#f9f7f2; }
+.report-table tr:hover td { background:#f0f7f3; }
+.report-table .ar { font-size:10px; color:#888; direction:rtl; font-family:'Cairo',sans-serif; }
+.report-table .num { text-align:right; font-variant-numeric:tabular-nums; }
+
+.chart-row { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:20px; }
+.chart-box { background:#fff; border:1px solid #e8e0cc; border-radius:8px; padding:16px; }
+.chart-box h4 { margin:0 0 12px; font-size:13px; color:var(--green-morocco); }
+@media(max-width:700px){ .chart-row { grid-template-columns:1fr; } }
+
+.mouv-sortie { color:var(--red-morocco); font-weight:600; }
+.mouv-entree { color:var(--success-green); font-weight:600; }
+
+.no-data { text-align:center; padding:40px; color:#999; font-size:13px; }
+.no-data i { font-size:32px; display:block; margin-bottom:8px; opacity:.4; }
+
+.btn-export { margin-left:auto; }
+
+/* Print styles */
+@media print {
+  .sidebar, .top-navbar, .official-header, .report-tabs, .report-controls,
+  .btn, button, .no-print { display:none !important; }
+  .main-content { margin:0 !important; padding:0 !important; }
+  .report-panel { display:block !important; }
+  body { background:#fff !important; }
+}
+</style>
+</head>
+<body>
+<script>
+const user = initPage('rapports', 'Rapports', 'التقارير', ['admin','responsable']);
+if (user) initRapports();
+
+let allArticles = [], allMovements = [], allCategories = [];
+let catChart = null, sectionChart = null, mouvChart = null;
+
+async function initRapports() {
+  const content = document.getElementById('page-content');
+  content.innerHTML = `
+    <div class="page-header">
+      <div>
+        <div class="page-title-fr"><i class="fa-solid fa-chart-bar"></i> Rapports & Statistiques</div>
+        <div class="page-title-ar">التقارير والإحصاءات</div>
+      </div>
+    </div>
+
+    <!-- TABS -->
+    <div class="report-tabs">
+      <div class="report-tab active" onclick="switchTab(0)">
+        <i class="fa-solid fa-boxes-stacked"></i> État du Stock
+        <span class="ar">حالة المخزون</span>
+      </div>
+      <div class="report-tab" onclick="switchTab(1)">
+        <i class="fa-solid fa-arrows-left-right"></i> Mouvements par Période
+        <span class="ar">الحركات حسب الفترة</span>
+      </div>
+      <div class="report-tab" onclick="switchTab(2)">
+        <i class="fa-solid fa-layer-group"></i> Stock par Catégorie
+        <span class="ar">المخزون حسب الفئة</span>
+      </div>
+    </div>
+
+    <!-- RAPPORT 1: ÉTAT DU STOCK -->
+    <div class="report-panel active" id="panel-0">
+      <div class="report-controls">
+        <div class="ctrl-group">
+          <label>Section / القسم</label>
+          <select id="r1-section" onchange="buildReport1()">
+            <option value="">Toutes les sections / جميع الأقسام</option>
+            <option value="Voirie">Voirie / الطرق</option>
+            <option value="Éclairage Public">Éclairage Public / الإنارة</option>
+          </select>
+        </div>
+        <div class="ctrl-group">
+          <label>Catégorie / الفئة</label>
+          <select id="r1-cat" onchange="buildReport1()">
+            <option value="">Toutes les catégories</option>
+          </select>
+        </div>
+        <div class="ctrl-group">
+          <label>Statut / الحالة</label>
+          <select id="r1-status" onchange="buildReport1()">
+            <option value="">Tous les statuts</option>
+            <option value="Disponible">Disponible / متوفر</option>
+            <option value="Stock Faible">Stock Faible / مخزون منخفض</option>
+            <option value="Rupture">Rupture / نفاد</option>
+          </select>
+        </div>
+        <div class="ctrl-group">
+          <label>Tri / الترتيب</label>
+          <select id="r1-sort" onchange="buildReport1()">
+            <option value="num">Numéro</option>
+            <option value="designation">Désignation</option>
+            <option value="qty_asc">Quantité ↑</option>
+            <option value="qty_desc">Quantité ↓</option>
+            <option value="statut">Statut</option>
+          </select>
+        </div>
+        <button class="btn btn-gold btn-export" onclick="exportPDF1()">
+          <i class="fa-solid fa-file-pdf"></i> Exporter PDF / تصدير PDF
+        </button>
+      </div>
+      <div id="r1-summary" class="report-summary"></div>
+      <div class="report-table-wrap">
+        <table class="report-table" id="r1-table">
+          <thead>
+            <tr>
+              <th>N°</th>
+              <th>Désignation / التسمية</th>
+              <th>Section</th>
+              <th>Catégorie</th>
+              <th class="num">Quantité</th>
+              <th class="num">Seuil</th>
+              <th>Statut</th>
+            </tr>
+          </thead>
+          <tbody id="r1-body"></tbody>
+        </table>
+      </div>
+      <div id="r1-nodata" class="no-data" style="display:none">
+        <i class="fa-solid fa-box-open"></i> Aucun article trouvé — لم يتم العثور على مادة
+      </div>
+    </div>
+
+    <!-- RAPPORT 2: MOUVEMENTS PAR PÉRIODE -->
+    <div class="report-panel" id="panel-1">
+      <div class="report-controls">
+        <div class="ctrl-group">
+          <label>Date début / تاريخ البداية</label>
+          <input type="date" id="r2-from" onchange="buildReport2()">
+        </div>
+        <div class="ctrl-group">
+          <label>Date fin / تاريخ النهاية</label>
+          <input type="date" id="r2-to" onchange="buildReport2()">
+        </div>
+        <div class="ctrl-group">
+          <label>Type / النوع</label>
+          <select id="r2-type" onchange="buildReport2()">
+            <option value="">Tous / الكل</option>
+            <option value="sortie">Sorties / مخرجات</option>
+            <option value="entree">Entrées / مدخلات</option>
+          </select>
+        </div>
+        <div class="ctrl-group">
+          <label>Section / القسم</label>
+          <select id="r2-section" onchange="buildReport2()">
+            <option value="">Toutes</option>
+            <option value="Voirie">Voirie</option>
+            <option value="Éclairage Public">Éclairage Public</option>
+          </select>
+        </div>
+        <button class="btn btn-gold btn-export" onclick="exportPDF2()">
+          <i class="fa-solid fa-file-pdf"></i> Exporter PDF / تصدير PDF
+        </button>
+      </div>
+      <div id="r2-summary" class="report-summary"></div>
+      <div class="chart-row">
+        <div class="chart-box">
+          <h4><i class="fa-solid fa-chart-line"></i> Mouvements par jour / الحركات اليومية</h4>
+          <canvas id="mouvChart" height="200"></canvas>
+        </div>
+        <div class="chart-box">
+          <h4><i class="fa-solid fa-chart-pie"></i> Entrées vs Sorties</h4>
+          <canvas id="typeChart" height="200"></canvas>
+        </div>
+      </div>
+      <div class="report-table-wrap">
+        <table class="report-table" id="r2-table">
+          <thead>
+            <tr>
+              <th>Date / التاريخ</th>
+              <th>Type / النوع</th>
+              <th>Article / المادة</th>
+              <th class="num">Quantité</th>
+              <th>Demandeur / الطالب</th>
+              <th>Motif / السبب</th>
+              <th>Validé par</th>
+            </tr>
+          </thead>
+          <tbody id="r2-body"></tbody>
+        </table>
+      </div>
+      <div id="r2-nodata" class="no-data" style="display:none">
+        <i class="fa-solid fa-calendar-xmark"></i> Aucun mouvement sur cette période — لا توجد حركات في هذه الفترة
+      </div>
+    </div>
+
+    <!-- RAPPORT 3: STOCK PAR CATÉGORIE -->
+    <div class="report-panel" id="panel-2">
+      <div class="report-controls">
+        <div class="ctrl-group">
+          <label>Section / القسم</label>
+          <select id="r3-section" onchange="buildReport3()">
+            <option value="">Toutes</option>
+            <option value="Voirie">Voirie</option>
+            <option value="Éclairage Public">Éclairage Public</option>
+          </select>
+        </div>
+        <button class="btn btn-gold btn-export" onclick="exportPDF3()">
+          <i class="fa-solid fa-file-pdf"></i> Exporter PDF / تصدير PDF
+        </button>
+      </div>
+      <div class="chart-row">
+        <div class="chart-box">
+          <h4><i class="fa-solid fa-chart-bar"></i> Articles par catégorie / المواد حسب الفئة</h4>
+          <canvas id="catChart" height="220"></canvas>
+        </div>
+        <div class="chart-box">
+          <h4><i class="fa-solid fa-chart-pie"></i> Voirie vs Éclairage Public</h4>
+          <canvas id="sectionChart" height="220"></canvas>
+        </div>
+      </div>
+      <div class="report-table-wrap" style="margin-top:20px">
+        <table class="report-table" id="r3-table">
+          <thead>
+            <tr>
+              <th>Catégorie / الفئة</th>
+              <th>Section / القسم</th>
+              <th class="num">Nb Articles</th>
+              <th class="num">En Rupture</th>
+              <th class="num">Stock Faible</th>
+              <th class="num">Disponibles</th>
+            </tr>
+          </thead>
+          <tbody id="r3-body"></tbody>
+        </table>
+      </div>
+    </div>`;
+
+  // Load data
+  try {
+    [allArticles, allMovements, allCategories] = await Promise.all([
+      apiGet('/api/articles'),
+      apiGet('/api/mouvements'),
+      apiGet('/api/categories')
+    ]);
+    populateCatFilters();
+    // Default dates for r2: last 30 days
+    const today = new Date();
+    const from = new Date(today); from.setDate(from.getDate() - 30);
+    document.getElementById('r2-from').value = from.toISOString().slice(0,10);
+    document.getElementById('r2-to').value = today.toISOString().slice(0,10);
+
+    buildReport1();
+    buildReport2();
+    buildReport3();
+  } catch(e) {
+    showToast('Erreur chargement données', 'error');
+  }
+}
+
+function populateCatFilters() {
+  const sel = document.getElementById('r1-cat');
+  sel.innerHTML = '<option value="">Toutes les catégories</option>';
+  allCategories.forEach(c => {
+    sel.innerHTML += `<option value="${c.id}">${c.nom_fr}</option>`;
+  });
+}
+
+function switchTab(idx) {
+  document.querySelectorAll('.report-tab').forEach((t,i) => t.classList.toggle('active', i===idx));
+  document.querySelectorAll('.report-panel').forEach((p,i) => p.classList.toggle('active', i===idx));
+}
+
+// ─── REPORT 1: ÉTAT DU STOCK ────────────────────────────────────────────────
+function getArticleStatus(a) {
+  if (a.quantite === 0) return 'Rupture';
+  if (a.quantite <= a.seuil) return 'Stock Faible';
+  return 'Disponible';
+}
+
+function buildReport1() {
+  const section = document.getElementById('r1-section').value;
+  const catId   = document.getElementById('r1-cat').value;
+  const status  = document.getElementById('r1-status').value;
+  const sort    = document.getElementById('r1-sort').value;
+
+  let data = allArticles.filter(a => {
+    if (section && a.section !== section) return false;
+    if (catId && String(a.cat_id) !== catId) return false;
+    if (status && getArticleStatus(a) !== status) return false;
+    return true;
+  });
+
+  // Sort
+  data.sort((a,b) => {
+    if (sort === 'num') return a.numero.localeCompare(b.numero, undefined, {numeric:true});
+    if (sort === 'designation') return a.designation_fr.localeCompare(b.designation_fr);
+    if (sort === 'qty_asc') return a.quantite - b.quantite;
+    if (sort === 'qty_desc') return b.quantite - a.quantite;
+    if (sort === 'statut') {
+      const ord = {Rupture:0,'Stock Faible':1,Disponible:2};
+      return ord[getArticleStatus(a)] - ord[getArticleStatus(b)];
+    }
+    return 0;
+  });
+
+  // Summary
+  const ruptures = data.filter(a => getArticleStatus(a) === 'Rupture').length;
+  const faibles  = data.filter(a => getArticleStatus(a) === 'Stock Faible').length;
+  const dispo    = data.filter(a => getArticleStatus(a) === 'Disponible').length;
+  document.getElementById('r1-summary').innerHTML = `
+    <div class="summary-box">
+      <div class="s-val">${data.length}</div>
+      <div class="s-lbl">Total Articles</div>
+      <div class="s-ar">مجموع المواد</div>
+    </div>
+    <div class="summary-box" style="border-top-color:var(--success-green)">
+      <div class="s-val" style="color:var(--success-green)">${dispo}</div>
+      <div class="s-lbl">Disponibles</div>
+      <div class="s-ar">متوفر</div>
+    </div>
+    <div class="summary-box" style="border-top-color:var(--alert-orange)">
+      <div class="s-val" style="color:var(--alert-orange)">${faibles}</div>
+      <div class="s-lbl">Stock Faible</div>
+      <div class="s-ar">مخزون منخفض</div>
+    </div>
+    <div class="summary-box" style="border-top-color:var(--red-morocco)">
+      <div class="s-val" style="color:var(--red-morocco)">${ruptures}</div>
+      <div class="s-lbl">Ruptures</div>
+      <div class="s-ar">نفاد المخزون</div>
+    </div>`;
+
+  // Table
+  const tbody = document.getElementById('r1-body');
+  const nodata = document.getElementById('r1-nodata');
+  if (!data.length) {
+    tbody.innerHTML = '';
+    nodata.style.display = 'block';
+    return;
+  }
+  nodata.style.display = 'none';
+  tbody.innerHTML = data.map(a => {
+    const st = getArticleStatus(a);
+    const cat = allCategories.find(c => c.id === a.cat_id);
+    const stBadge = st === 'Disponible'
+      ? `<span class="badge badge-success">Disponible</span>`
+      : st === 'Stock Faible'
+      ? `<span class="badge badge-warning">Stock Faible</span>`
+      : `<span class="badge badge-danger">Rupture</span>`;
+    return `<tr>
+      <td><code style="font-size:11px;color:var(--green-morocco)">${esc(a.numero)}</code></td>
+      <td>
+        <div style="font-weight:600">${esc(a.designation_fr)}</div>
+        <div class="ar">${esc(a.designation_ar||'')}</div>
+      </td>
+      <td><span style="font-size:11px">${esc(a.section)}</span></td>
+      <td><span style="font-size:11px">${esc(cat?.nom_fr||'')}</span></td>
+      <td class="num" style="font-weight:600">${fmtQty(a.quantite, a.unite)}</td>
+      <td class="num" style="color:#888">${fmtQty(a.seuil, a.unite)}</td>
+      <td>${stBadge}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ─── REPORT 2: MOUVEMENTS PAR PÉRIODE ───────────────────────────────────────
+function buildReport2() {
+  const from    = document.getElementById('r2-from').value;
+  const to      = document.getElementById('r2-to').value;
+  const type    = document.getElementById('r2-type').value;
+  const section = document.getElementById('r2-section').value;
+
+  const fromD = from ? new Date(from) : null;
+  const toD   = to   ? new Date(to + 'T23:59:59') : null;
+
+  let data = allMovements.filter(m => {
+    const d = new Date(m.date);
+    if (fromD && d < fromD) return false;
+    if (toD   && d > toD)   return false;
+    if (type  && m.type !== type) return false;
+    if (section) {
+      const art = allArticles.find(a => a.id === m.article_id);
+      if (!art || art.section !== section) return false;
+    }
+    return true;
+  }).sort((a,b) => new Date(b.date) - new Date(a.date));
+
+  // Summary
+  const sorties = data.filter(m => m.type === 'sortie').length;
+  const entrees = data.filter(m => m.type === 'entree').length;
+  const qtyOut  = data.filter(m=>m.type==='sortie').reduce((s,m)=>s+m.quantite,0);
+  const qtyIn   = data.filter(m=>m.type==='entree').reduce((s,m)=>s+m.quantite,0);
+  document.getElementById('r2-summary').innerHTML = `
+    <div class="summary-box">
+      <div class="s-val">${data.length}</div>
+      <div class="s-lbl">Total Mouvements</div>
+      <div class="s-ar">مجموع الحركات</div>
+    </div>
+    <div class="summary-box" style="border-top-color:var(--success-green)">
+      <div class="s-val" style="color:var(--success-green)">${entrees}</div>
+      <div class="s-lbl">Entrées</div>
+      <div class="s-ar">مدخلات</div>
+    </div>
+    <div class="summary-box" style="border-top-color:var(--red-morocco)">
+      <div class="s-val" style="color:var(--red-morocco)">${sorties}</div>
+      <div class="s-lbl">Sorties</div>
+      <div class="s-ar">مخرجات</div>
+    </div>`;
+
+  // Charts
+  buildMovementsCharts(data, fromD, toD);
+
+  // Table
+  const tbody  = document.getElementById('r2-body');
+  const nodata = document.getElementById('r2-nodata');
+  if (!data.length) { tbody.innerHTML=''; nodata.style.display='block'; return; }
+  nodata.style.display='none';
+  tbody.innerHTML = data.map(m => {
+    const art = allArticles.find(a => a.id === m.article_id);
+    const typeBadge = m.type === 'sortie'
+      ? `<span class="badge badge-danger">Sortie <span style="font-family:Cairo;font-size:9px">خروج</span></span>`
+      : `<span class="badge badge-success">Entrée <span style="font-family:Cairo;font-size:9px">دخول</span></span>`;
+    return `<tr>
+      <td style="white-space:nowrap;font-size:11px">${fmtDate(m.date)}</td>
+      <td>${typeBadge}</td>
+      <td>
+        <div style="font-weight:600;font-size:12px">${esc(art?.designation_fr||m.article_id)}</div>
+        <div style="font-size:10px;color:#888">${esc(art?.numero||'')}</div>
+      </td>
+      <td class="num" style="font-weight:600">${fmtQty(m.quantite, art?.unite||'U')}</td>
+      <td style="font-size:11px">${esc(m.demandeur||'—')}</td>
+      <td style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis">${esc(m.motif||'—')}</td>
+      <td style="font-size:11px">${esc(m.valide_par||'—')}</td>
+    </tr>`;
+  }).join('');
+}
+
+let mouvChartInst=null, typeChartInst=null;
+function buildMovementsCharts(data, fromD, toD) {
+  // Daily movements chart
+  const dayMap = {};
+  data.forEach(m => {
+    const d = m.date.slice(0,10);
+    if (!dayMap[d]) dayMap[d] = {sortie:0, entree:0};
+    dayMap[d][m.type]++;
+  });
+  const days = Object.keys(dayMap).sort().slice(-30); // max 30 days
+  const sortieVals = days.map(d => dayMap[d].sortie);
+  const entreeVals = days.map(d => dayMap[d].entree);
+
+  if (mouvChartInst) mouvChartInst.destroy();
+  const ctx1 = document.getElementById('mouvChart').getContext('2d');
+  mouvChartInst = new Chart(ctx1, {
+    type: 'bar',
+    data: {
+      labels: days.map(d => d.slice(5)),
+      datasets: [
+        { label:'Sorties', data:sortieVals, backgroundColor:'rgba(193,39,45,0.7)' },
+        { label:'Entrées', data:entreeVals, backgroundColor:'rgba(0,98,51,0.7)' }
+      ]
+    },
+    options: {
+      responsive:true, plugins:{legend:{position:'bottom'}},
+      scales:{ x:{ticks:{font:{size:9}}}, y:{beginAtZero:true, ticks:{stepSize:1}} }
+    }
+  });
+
+  // Pie chart
+  const totalSorties = data.filter(m=>m.type==='sortie').length;
+  const totalEntrees = data.filter(m=>m.type==='entree').length;
+  if (typeChartInst) typeChartInst.destroy();
+  const ctx2 = document.getElementById('typeChart').getContext('2d');
+  typeChartInst = new Chart(ctx2, {
+    type: 'doughnut',
+    data: {
+      labels: ['Sorties / مخرجات', 'Entrées / مدخلات'],
+      datasets:[{ data:[totalSorties, totalEntrees],
+        backgroundColor:['rgba(193,39,45,0.8)','rgba(0,98,51,0.8)'],
+        borderColor:['#C1272D','#006233'], borderWidth:2 }]
+    },
+    options:{ responsive:true, plugins:{legend:{position:'bottom'}} }
+  });
+}
+
+// ─── REPORT 3: STOCK PAR CATÉGORIE ──────────────────────────────────────────
+function buildReport3() {
+  const section = document.getElementById('r3-section').value;
+  const cats = allCategories.filter(c => !section || c.section === section);
+
+  const catData = cats.map(c => {
+    const arts = allArticles.filter(a => a.cat_id === c.id);
+    const ruptures = arts.filter(a => a.quantite === 0).length;
+    const faibles  = arts.filter(a => a.quantite > 0 && a.quantite <= a.seuil).length;
+    const dispos   = arts.filter(a => a.quantite > a.seuil).length;
+    return { cat:c, total:arts.length, ruptures, faibles, dispos };
+  }).filter(d => d.total > 0);
+
+  // Charts
+  if (catChart) catChart.destroy();
+  if (sectionChart) sectionChart.destroy();
+
+  const ctx1 = document.getElementById('catChart').getContext('2d');
+  catChart = new Chart(ctx1, {
+    type:'bar',
+    data:{
+      labels: catData.map(d => d.cat.nom_fr.length > 20 ? d.cat.nom_fr.slice(0,18)+'…' : d.cat.nom_fr),
+      datasets:[
+        { label:'Disponibles', data:catData.map(d=>d.dispos), backgroundColor:'rgba(0,98,51,0.7)' },
+        { label:'Stock Faible', data:catData.map(d=>d.faibles), backgroundColor:'rgba(224,123,0,0.7)' },
+        { label:'Ruptures', data:catData.map(d=>d.ruptures), backgroundColor:'rgba(193,39,45,0.7)' }
+      ]
+    },
+    options:{
+      responsive:true, plugins:{legend:{position:'bottom'}},
+      scales:{ x:{stacked:true, ticks:{font:{size:9}}}, y:{stacked:true, beginAtZero:true} }
+    }
+  });
+
+  const voirieCount = allArticles.filter(a => a.section === 'Voirie').length;
+  const epCount     = allArticles.filter(a => a.section === 'Éclairage Public').length;
+  const ctx2 = document.getElementById('sectionChart').getContext('2d');
+  sectionChart = new Chart(ctx2, {
+    type:'pie',
+    data:{
+      labels:['Voirie / الطرق','Éclairage Public / الإنارة'],
+      datasets:[{ data:[voirieCount, epCount],
+        backgroundColor:['rgba(0,98,51,0.8)','rgba(201,168,76,0.8)'],
+        borderColor:['#006233','#C9A84C'], borderWidth:2 }]
+    },
+    options:{ responsive:true, plugins:{legend:{position:'bottom'}} }
+  });
+
+  // Table
+  const tbody = document.getElementById('r3-body');
+  tbody.innerHTML = catData.map(d => `
+    <tr>
+      <td>
+        <div style="font-weight:600">${esc(d.cat.nom_fr)}</div>
+        <div class="ar">${esc(d.cat.nom_ar||'')}</div>
+      </td>
+      <td style="font-size:11px">${esc(d.cat.section)}</td>
+      <td class="num" style="font-weight:700">${d.total}</td>
+      <td class="num" style="color:var(--red-morocco);font-weight:700">${d.ruptures}</td>
+      <td class="num" style="color:var(--alert-orange);font-weight:700">${d.faibles}</td>
+      <td class="num" style="color:var(--success-green);font-weight:700">${d.dispos}</td>
+    </tr>`).join('');
+}
+
+// ─── PDF EXPORTS ─────────────────────────────────────────────────────────────
+function exportPDF1() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation:'landscape', format:'a4' });
+  const section = document.getElementById('r1-section').value || 'Toutes sections';
+  const status  = document.getElementById('r1-status').value  || 'Tous statuts';
+  const user    = getUser();
+
+  pdfAddHeader(doc, `ÉTAT DU STOCK — ${new Date().toLocaleDateString('fr-MA')}`);
+
+  const rows = [];
+  document.querySelectorAll('#r1-body tr').forEach(tr => {
+    const tds = tr.querySelectorAll('td');
+    rows.push([
+      tds[0]?.querySelector('code')?.textContent || '',
+      tds[1]?.querySelector('div')?.textContent || '',
+      tds[2]?.textContent?.trim() || '',
+      tds[3]?.textContent?.trim() || '',
+      tds[4]?.textContent?.trim() || '',
+      tds[5]?.textContent?.trim() || '',
+      tds[6]?.textContent?.trim() || ''
+    ]);
+  });
+
+  doc.autoTable({
+    startY: 55,
+    head: [['N°','Désignation','Section','Catégorie','Quantité','Seuil','Statut']],
+    body: rows,
+    styles:{ fontSize:8, font:'helvetica' },
+    headStyles:{ fillColor:[0,98,51], textColor:255, fontStyle:'bold' },
+    alternateRowStyles:{ fillColor:[245,245,240] },
+    columnStyles:{ 0:{cellWidth:22}, 1:{cellWidth:70}, 4:{halign:'right'}, 5:{halign:'right'} }
+  });
+
+  pdfAddFooter(doc, user);
+  doc.save(`Etat_Stock_${new Date().toISOString().slice(0,10)}.pdf`);
+}
+
+function exportPDF2() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation:'landscape', format:'a4' });
+  const from = document.getElementById('r2-from').value;
+  const to   = document.getElementById('r2-to').value;
+  const user = getUser();
+
+  pdfAddHeader(doc, `MOUVEMENTS — Période: ${from} au ${to}`);
+
+  const rows = [];
+  document.querySelectorAll('#r2-body tr').forEach(tr => {
+    const tds = tr.querySelectorAll('td');
+    rows.push([
+      tds[0]?.textContent?.trim()||'',
+      tds[1]?.textContent?.trim()||'',
+      tds[2]?.querySelector('div')?.textContent?.trim()||'',
+      tds[3]?.textContent?.trim()||'',
+      tds[4]?.textContent?.trim()||'',
+      tds[5]?.textContent?.trim()||'',
+      tds[6]?.textContent?.trim()||''
+    ]);
+  });
+
+  doc.autoTable({
+    startY: 55,
+    head: [['Date','Type','Article','Quantité','Demandeur','Motif','Validé par']],
+    body: rows,
+    styles:{ fontSize:8 },
+    headStyles:{ fillColor:[0,98,51], textColor:255, fontStyle:'bold' },
+    alternateRowStyles:{ fillColor:[245,245,240] },
+    columnStyles:{
+      0:{cellWidth:28}, 1:{cellWidth:22}, 2:{cellWidth:60},
+      3:{halign:'right',cellWidth:22}, 4:{cellWidth:35}, 5:{cellWidth:45}
+    }
+  });
+
+  pdfAddFooter(doc, user);
+  doc.save(`Mouvements_${from}_${to}.pdf`);
+}
+
+function exportPDF3() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation:'portrait', format:'a4' });
+  const user = getUser();
+
+  pdfAddHeader(doc, `STOCK PAR CATÉGORIE — ${new Date().toLocaleDateString('fr-MA')}`);
+
+  const rows = [];
+  document.querySelectorAll('#r3-body tr').forEach(tr => {
+    const tds = tr.querySelectorAll('td');
+    rows.push([
+      tds[0]?.querySelector('div')?.textContent||'',
+      tds[1]?.textContent?.trim()||'',
+      tds[2]?.textContent?.trim()||'',
+      tds[3]?.textContent?.trim()||'',
+      tds[4]?.textContent?.trim()||'',
+      tds[5]?.textContent?.trim()||''
+    ]);
+  });
+
+  doc.autoTable({
+    startY: 55,
+    head: [['Catégorie','Section','Total Articles','Ruptures','Stock Faible','Disponibles']],
+    body: rows,
+    styles:{ fontSize:9 },
+    headStyles:{ fillColor:[0,98,51], textColor:255, fontStyle:'bold' },
+    alternateRowStyles:{ fillColor:[245,245,240] },
+    columnStyles:{ 2:{halign:'center'}, 3:{halign:'center',textColor:[193,39,45]}, 4:{halign:'center',textColor:[224,123,0]}, 5:{halign:'center',textColor:[0,98,51]} }
+  });
+
+  pdfAddFooter(doc, user);
+  doc.save(`Stock_Categorie_${new Date().toISOString().slice(0,10)}.pdf`);
+}
+
+function pdfAddFooter(doc, user) {
+  const pgCount = doc.getNumberOfPages();
+  for (let i=1; i<=pgCount; i++) {
+    doc.setPage(i);
+    const pw = doc.internal.pageSize.getWidth();
+    const ph = doc.internal.pageSize.getHeight();
+    doc.setFontSize(8);
+    doc.setTextColor(100);
+    doc.text(`Arrêté le ${new Date().toLocaleDateString('fr-MA')} — Établi par: ${user?.nom||user?.username||''}`, 14, ph-10);
+    doc.text(`Signature du Responsable: ___________________`, pw/2, ph-10, {align:'center'});
+    doc.text(`Page ${i}/${pgCount}`, pw-14, ph-10, {align:'right'});
+    doc.setDrawColor(201,168,76);
+    doc.setLineWidth(0.5);
+    doc.line(14, ph-14, pw-14, ph-14);
+  }
+}
+
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>

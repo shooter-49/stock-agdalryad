@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gestion du Stock — Agdal-Ryad</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script src="js/app.js"></script>
+</head>
+<body>
+<script>
+const user = initPage('stock', 'Gestion du Stock', 'إدارة المخزون');
+if (user) initStock();
+
+let allArticles = [], allCategories = [], currentPage = 1, PAGE_SIZE = 25;
+let filterSection = '', filterCat = '', filterStatus = '', searchQuery = '';
+let editingId = null;
+
+async function initStock() {
+  const content = document.getElementById('page-content');
+  const canEdit = ['admin','responsable'].includes(user.role);
+  
+  content.innerHTML = `
+    <div class="page-header">
+      <div>
+        <div class="page-title-fr"><i class="fa-solid fa-boxes-stacking"></i> Gestion du Stock</div>
+        <div class="page-title-ar">إدارة المخزون</div>
+      </div>
+      ${canEdit ? `<button class="btn btn-primary" onclick="openAddModal()">
+        <i class="fa-solid fa-plus"></i> Ajouter / إضافة
+      </button>` : ''}
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <i class="fa-solid fa-filter"></i> Filtres / الفلاتر
+        <span id="article-count" style="margin-left:auto;font-size:11px;opacity:0.7"></span>
+      </div>
+      <div class="card-body">
+        <div class="filters-bar">
+          <div class="search-box" style="flex:2">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="text" class="form-control" id="search-input" placeholder="Rechercher... / البحث...">
+          </div>
+          <select class="form-control" id="filter-section" style="width:160px">
+            <option value="">Toutes sections / الكل</option>
+            <option value="Voirie">Voirie / الطرق</option>
+            <option value="Éclairage Public">Éclairage Public / الإنارة</option>
+          </select>
+          <select class="form-control" id="filter-cat" style="width:200px">
+            <option value="">Toutes catégories</option>
+          </select>
+          <select class="form-control" id="filter-status" style="width:160px">
+            <option value="">Tous statuts / كل الحالات</option>
+            <option value="disponible">Disponible / متوفر</option>
+            <option value="faible">Stock Faible / منخفض</option>
+            <option value="rupture">Rupture / نفاد</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="card-body" style="padding:0">
+        <div class="table-container">
+          <table>
+            <thead><tr>
+              <th>N° / الرقم</th>
+              <th>Désignation / التسمية</th>
+              <th>Section / القسم</th>
+              <th>Catégorie / الفئة</th>
+              <th>Quantité / الكمية</th>
+              <th>Seuil / الحد</th>
+              <th>Statut / الحالة</th>
+              <th>Actions</th>
+            </tr></thead>
+            <tbody id="stock-tbody"></tbody>
+          </table>
+        </div>
+        <div style="padding:12px 16px;border-top:1px solid #eee;display:flex;align-items:center;justify-content:space-between">
+          <div id="page-info" style="font-size:11px;color:#888"></div>
+          <div class="pagination" id="pagination"></div>
+        </div>
+      </div>
+    </div>`;
+
+  // Event listeners
+  let searchTimer;
+  document.getElementById('search-input').oninput = (e) => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { searchQuery = e.target.value; currentPage = 1; renderTable(); }, 200);
+  };
+  document.getElementById('filter-section').onchange = (e) => {
+    filterSection = e.target.value; 
+    filterCat = '';
+    currentPage = 1;
+    populateCatFilter();
+    renderTable();
+  };
+  document.getElementById('filter-cat').onchange = (e) => { filterCat = e.target.value; currentPage = 1; renderTable(); };
+  document.getElementById('filter-status').onchange = (e) => { filterStatus = e.target.value; currentPage = 1; renderTable(); };
+
+  await loadData();
+  setInterval(loadData, 15000);
+}
+
+async function loadData() {
+  [allArticles, allCategories] = await Promise.all([
+    apiGet('/api/articles'),
+    apiGet('/api/categories')
+  ]);
+  populateCatFilter();
+  renderTable();
+}
+
+function populateCatFilter() {
+  const sel = document.getElementById('filter-cat');
+  if (!sel) return;
+  const cats = filterSection ? allCategories.filter(c => c.section === filterSection) : allCategories;
+  sel.innerHTML = '<option value="">Toutes catégories</option>' +
+    cats.map(c => `<option value="${c.id}" ${filterCat == c.id ? 'selected' : ''}>${c.nom}</option>`).join('');
+}
+
+function getFiltered() {
+  const sq = searchQuery.toLowerCase();
+  return allArticles.filter(a => {
+    if (filterSection && a.section !== filterSection) return false;
+    if (filterCat && a.categorie_id != filterCat) return false;
+    if (filterStatus === 'disponible' && !(a.quantite > a.seuil)) return false;
+    if (filterStatus === 'faible' && !(a.quantite > 0 && a.quantite <= a.seuil)) return false;
+    if (filterStatus === 'rupture' && a.quantite !== 0) return false;
+    if (sq && !a.id.toLowerCase().includes(sq) && !a.designation.toLowerCase().includes(sq) && !(a.designation_ar && a.designation_ar.includes(searchQuery))) return false;
+    return true;
+  });
+}
+
+function renderTable() {
+  const filtered = getFiltered();
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  currentPage = Math.min(currentPage, totalPages);
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const pageData = filtered.slice(start, start + PAGE_SIZE);
+  const canEdit = ['admin','responsable'].includes(user.role);
+
+  document.getElementById('article-count').textContent = `${total} article(s) / مادة`;
+  document.getElementById('page-info').textContent = `Page ${currentPage}/${totalPages} — ${total} résultats`;
+
+  const tbody = document.getElementById('stock-tbody');
+  if (!pageData.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#888;padding:24px">Aucun article trouvé / لا توجد مواد</td></tr>';
+  } else {
+    const catMap = Object.fromEntries(allCategories.map(c => [c.id, c.nom]));
+    tbody.innerHTML = pageData.map(a => `
+      <tr style="cursor:pointer" onclick="viewDetail('${a.id}')">
+        <td><span style="font-weight:700;font-size:11px;color:var(--green-morocco)">${a.id}</span></td>
+        <td>
+          <div style="font-weight:600;font-size:12px">${a.designation}</div>
+          <div style="font-size:10px;color:#888;direction:rtl">${a.designation_ar || ''}</div>
+        </td>
+        <td>
+          <span class="section-pill ${a.section === 'Voirie' ? 'section-voirie' : 'section-ep'}">
+            ${a.section === 'Voirie' ? '🛣️ Voirie' : '💡 Éclairage'}
+          </span>
+        </td>
+        <td style="font-size:11px">${catMap[a.categorie_id] || '—'}</td>
+        <td>${fmtQty(a.quantite, a.unite)}</td>
+        <td style="font-size:11px;color:#888">${a.seuil} ${a.unite}</td>
+        <td>${statusBadge(a.quantite, a.seuil)}</td>
+        <td onclick="event.stopPropagation()">
+          ${canEdit ? `
+            <button class="btn btn-sm btn-outline btn-icon" onclick="openEditModal('${a.id}')" title="Modifier"><i class="fa-solid fa-pen"></i></button>
+            <button class="btn btn-sm btn-danger btn-icon" onclick="deleteArticle('${a.id}')" title="Supprimer"><i class="fa-solid fa-trash"></i></button>
+          ` : ''}
+          ${user.role === 'agent' ? `<button class="btn btn-gold" onclick="openResaFromArticle('${a.id}')"><i class="fa-bookmark"></i> Réserver</button>` : ''}
+        </td>
+      </tr>`).join('');
+  }
+
+  // Pagination
+  const pag = document.getElementById('pagination');
+  let pagHtml = '';
+  if (totalPages > 1) {
+    if (currentPage > 1) pagHtml += `<button class="page-btn" onclick="goPage(${currentPage-1})">‹</button>`;
+    for (let i = Math.max(1,currentPage-2); i <= Math.min(totalPages,currentPage+2); i++) {
+      pagHtml += `<button class="page-btn ${i===currentPage?'active':''}" onclick="goPage(${i})">${i}</button>`;
+    }
+    if (currentPage < totalPages) pagHtml += `<button class="page-btn" onclick="goPage(${currentPage+1})">›</button>`;
+  }
+  pag.innerHTML = pagHtml;
+}
+
+function goPage(p) { currentPage = p; renderTable(); }
+
+function viewDetail(id) {
+  const a = allArticles.find(x => x.id === id);
+  if (!a) return;
+  const catName = (allCategories.find(c => c.id === a.categorie_id) || {}).nom || '—';
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <div>
+          <h3><i class="fa-solid fa-circle-info"></i> Détail Article — ${a.id}</h3>
+          <div class="modal-header-ar">تفاصيل المادة</div>
+        </div>
+        <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+      </div>
+      <div class="modal-body">
+        <div style="text-align:center;margin-bottom:16px">${statusBadge(a.quantite, a.seuil)}</div>
+        <div class="info-row"><span class="info-label">Code / الرمز</span><span class="info-value" style="font-weight:800;color:var(--green-morocco)">${a.id}</span></div>
+        <div class="info-row"><span class="info-label">Désignation (FR)</span><span class="info-value">${a.designation}</span></div>
+        <div class="info-row"><span class="info-label">التسمية (عربي)</span><span class="info-value" style="direction:rtl">${a.designation_ar || '—'}</span></div>
+        <hr class="gold-divider">
+        <div class="info-row"><span class="info-label">Section / القسم</span><span class="info-value">${a.section}</span></div>
+        <div class="info-row"><span class="info-label">Catégorie / الفئة</span><span class="info-value">${catName}</span></div>
+        <div class="info-row"><span class="info-label">Quantité / الكمية</span><span class="info-value" style="font-size:18px;font-weight:800">${a.quantite} ${a.unite}</span></div>
+        <div class="info-row"><span class="info-label">Seuil d'alerte / الحد</span><span class="info-value">${a.seuil} ${a.unite}</span></div>
+        ${a.notes ? `<div class="info-row"><span class="info-label">Notes</span><span class="info-value">${a.notes}</span></div>` : ''}
+      </div>
+      <div class="modal-footer">
+        ${user.role === 'agent' ? `<button class="btn btn-gold" onclick="openResaFromArticle('${a.id}')"><i class="fa-bookmark"></i> Réserver cet article</button>` : ''}
+        <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Fermer / إغلاق</button>
+      </div>
+    </div>`;
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  document.body.appendChild(overlay);
+}
+
+function openAddModal() {
+  editingId = null;
+  openArticleModal(null);
+}
+
+function openEditModal(id) {
+  editingId = id;
+  const a = allArticles.find(x => x.id === id);
+  openArticleModal(a);
+}
+
+function openArticleModal(article) {
+  const isEdit = !!article;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+
+  // Build category options by section
+  const buildCatOpts = (section) => {
+    const cats = section ? allCategories.filter(c => c.section === section) : allCategories;
+    return cats.map(c => `<option value="${c.id}" ${article && article.categorie_id === c.id ? 'selected' : ''}>${c.nom}</option>`).join('');
+  };
+
+  overlay.innerHTML = `
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <div>
+          <h3><i class="fa-solid fa-${isEdit ? 'pen' : 'plus'}"></i> ${isEdit ? 'Modifier' : 'Ajouter'} un Article</h3>
+          <div class="modal-header-ar">${isEdit ? 'تعديل مادة' : 'إضافة مادة جديدة'}</div>
+        </div>
+        <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Code Article <span class="form-label-ar">رمز المادة</span></label>
+            <input type="text" class="form-control" id="f-id" value="${article ? article.id : ''}" placeholder="ex: V-001 أو EP-001" ${isEdit ? 'readonly' : ''}>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Section <span class="form-label-ar">القسم</span></label>
+            <select class="form-control" id="f-section" onchange="updateCatSelect(this.value)">
+              <option value="Voirie" ${article && article.section === 'Voirie' ? 'selected' : ''}>Voirie / الطرق</option>
+              <option value="Éclairage Public" ${article && article.section === 'Éclairage Public' ? 'selected' : ''}>Éclairage Public / الإنارة</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Désignation (Français) <span class="form-label-ar">التسمية بالفرنسية</span></label>
+          <input type="text" class="form-control" id="f-designation" value="${article ? article.designation : ''}" placeholder="Nom de l'article en français">
+        </div>
+        <div class="form-group">
+          <label class="form-label">التسمية (عربي) <span class="form-label-ar">Désignation en arabe</span></label>
+          <input type="text" class="form-control" id="f-designation-ar" value="${article ? (article.designation_ar || '') : ''}" placeholder="اسم المادة بالعربية" style="direction:rtl">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Catégorie <span class="form-label-ar">الفئة</span></label>
+          <select class="form-control" id="f-categorie">
+            ${buildCatOpts(article ? article.section : 'Voirie')}
+          </select>
+        </div>
+        <div class="form-row-3">
+          <div class="form-group">
+            <label class="form-label">Quantité <span class="form-label-ar">الكمية</span></label>
+            <input type="number" class="form-control" id="f-quantite" value="${article ? article.quantite : 0}" min="0" step="0.001">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Unité <span class="form-label-ar">الوحدة</span></label>
+            <select class="form-control" id="f-unite">
+              ${['U','ML','Kg','m²','m³','L','sac'].map(u => `<option ${article && article.unite === u ? 'selected' : ''}>${u}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Seuil d'alerte <span class="form-label-ar">حد التنبيه</span></label>
+            <input type="number" class="form-control" id="f-seuil" value="${article ? article.seuil : 10}" min="0" step="0.001">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes <span class="form-label-ar">ملاحظات</span></label>
+          <textarea class="form-control" id="f-notes" rows="2" placeholder="Notes optionnelles...">${article ? (article.notes || '') : ''}</textarea>
+        </div>
+        <div id="form-error" style="color:var(--red-morocco);font-size:12px;display:none;margin-top:8px"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Annuler / إلغاء</button>
+        <button class="btn btn-primary" onclick="saveArticle('${isEdit ? article.id : ''}')">
+          <i class="fa-solid fa-save"></i> ${isEdit ? 'Enregistrer / حفظ' : 'Ajouter / إضافة'}
+        </button>
+      </div>
+    </div>`;
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  document.body.appendChild(overlay);
+}
+
+function updateCatSelect(section) {
+  const sel = document.getElementById('f-categorie');
+  if (!sel) return;
+  const cats = allCategories.filter(c => c.section === section);
+  sel.innerHTML = cats.map(c => `<option value="${c.id}">${c.nom}</option>`).join('');
+}
+
+async function saveArticle(existingId) {
+  const errEl = document.getElementById('form-error');
+  errEl.style.display = 'none';
+  
+  const fields = ['f-id','f-designation','f-quantite','f-seuil'];
+  let hasError = false;
+  fields.forEach(f => {
+    const el = document.getElementById(f);
+    if (el && !el.value.trim()) { el.classList.add('error'); hasError = true; }
+    else if (el) el.classList.remove('error');
+  });
+  
+  if (hasError) {
+    errEl.textContent = 'Veuillez remplir tous les champs obligatoires / يرجى ملء جميع الحقول الإلزامية';
+    errEl.style.display = 'block'; return;
+  }
+
+  const data = {
+    id: document.getElementById('f-id').value.trim().toUpperCase(),
+    designation: document.getElementById('f-designation').value.trim(),
+    designation_ar: document.getElementById('f-designation-ar').value.trim(),
+    section: document.getElementById('f-section').value,
+    categorie_id: parseInt(document.getElementById('f-categorie').value),
+    quantite: parseFloat(document.getElementById('f-quantite').value),
+    unite: document.getElementById('f-unite').value,
+    seuil: parseFloat(document.getElementById('f-seuil').value),
+    notes: document.getElementById('f-notes').value.trim(),
+    utilisateur: user.nom
+  };
+
+  try {
+    if (existingId) {
+      await apiPut('/api/articles/' + existingId, data);
+      toast('Article modifié avec succès', 'success', 'تم تعديل المادة بنجاح');
+    } else {
+      await apiPost('/api/articles', data);
+      toast('Article ajouté avec succès', 'success', 'تم إضافة المادة بنجاح');
+    }
+    document.querySelector('.modal-overlay').remove();
+    await loadData();
+  } catch(e) {
+    errEl.textContent = e.message;
+    errEl.style.display = 'block';
+  }
+}
+
+async function deleteArticle(id) {
+  const a = allArticles.find(x => x.id === id);
+  confirmModal(
+    'Supprimer l\'article', 'حذف المادة',
+    `Êtes-vous sûr de vouloir supprimer l'article <strong>${a.designation}</strong> (${id}) ?`,
+    async () => {
+      try {
+        await apiDelete(`/api/articles/${id}?utilisateur=${encodeURIComponent(user.nom)}`);
+        toast('Article supprimé', 'success', 'تم حذف المادة');
+        await loadData();
+      } catch(e) { toast(e.message, 'error', 'خطأ في الحذف'); }
+    }
+  );
+}
+
+function openResaFromArticle(articleId) {
+  const a = allArticles.find(x => x.id === articleId);
+  if (!a) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <div>
+          <h3><i class="fa-bookmark"></i> Réserver l'article — ${a.id}</h3>
+          <div class="modal-header-ar">حجز المادة</div>
+        </div>
+        <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="info-row"><span class="info-label">Article</span><span class="info-value">${a.designation} (${a.id})</span></div>
+        <div class="form-group">
+          <label class="form-label">Quantité <span class="form-label-ar">الكمية</span></label>
+          <input type="number" class="form-control" id="resa-quantite" min="0.001" step="0.001" placeholder="Quantité à réserver">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Chantier <span class="form-label-ar">الموقع</span></label>
+          <input type="text" class="form-control" id="resa-chantier" placeholder="Nom du chantier">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Motif <span class="form-label-ar">السبب</span></label>
+          <input type="text" class="form-control" id="resa-motif" placeholder="Motif de la réservation">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Urgence <span class="form-label-ar">الأولوية</span></label>
+          <select class="form-control" id="resa-urgence">
+            <option value="normale">Normale / عادية</option>
+            <option value="urgente">Urgente / عاجلة</option>
+            <option value="critique">Critique / حرجة</option>
+          </select>
+        </div>
+        <div id="resa-error" style="color:var(--red-morocco);font-size:12px;display:none;margin-top:8px"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Annuler / إلغاء</button>
+        <button class="btn btn-primary" onclick="submitReservation('${articleId}')">
+          <i class="fa-bookmark"></i> Réserver / حجز
+        </button>
+      </div>
+    </div>`;
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  document.body.appendChild(overlay);
+}
+
+async function submitReservation(articleId) {
+  const errEl = document.getElementById('resa-error');
+  errEl.style.display = 'none';
+  
+  const quantite = parseFloat(document.getElementById('resa-quantite').value);
+  const chantier = document.getElementById('resa-chantier').value.trim();
+  const motif = document.getElementById('resa-motif').value.trim();
+  const urgence = document.getElementById('resa-urgence').value;
+  
+  if (!quantite || quantite <= 0) {
+    errEl.textContent = 'Quantité invalide / كمية غير صحيحة';
+    errEl.style.display = 'block';
+    return;
+  }
+  
+  try {
+    await apiPost('/api/reservations', {
+      article_id: articleId,
+      quantite,
+      chantier,
+      motif,
+      urgence,
+      utilisateur: user.nom,
+      nom_agent: user.nom
+    });
+    toast('Réservation créée avec succès', 'success', 'تم إنشاء الحجز بنجاح');
+    document.querySelector('.modal-overlay').remove();
+  } catch(e) {
+    errEl.textContent = e.message;
+    errEl.style.display = 'block';
+  }
+}
+</script>
+</body>
+</html>

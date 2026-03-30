@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Réservations — Stock Agdal-Ryad</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="js/app.js"></script>
+<style>
+.resa-tabs { display:flex; gap:4px; margin-bottom:18px; }
+.resa-tab {
+  padding:8px 18px; cursor:pointer; font-size:12px; font-weight:600;
+  border:1px solid #ddd; border-radius:6px; background:#fff; color:#555;
+  transition:.2s; display:flex; align-items:center; gap:6px;
+}
+.resa-tab.active { background:var(--green-morocco); color:#fff; border-color:var(--green-morocco); }
+.resa-tab .badge-count {
+  background:rgba(255,255,255,0.3); color:#fff; font-size:10px;
+  padding:1px 6px; border-radius:10px; font-weight:700;
+}
+.resa-tab:not(.active) .badge-count { background:var(--red-morocco); color:#fff; }
+
+.resa-card {
+  background:#fff; border:1px solid #e8e0cc; border-radius:10px;
+  margin-bottom:14px; overflow:hidden;
+  box-shadow:0 2px 8px rgba(0,0,0,.06); transition:.2s;
+}
+.resa-card:hover { box-shadow:0 4px 16px rgba(0,0,0,.1); }
+.resa-card-header {
+  padding:12px 16px; display:flex; align-items:center; gap:12px;
+  border-bottom:1px solid #f0ebe0;
+}
+.resa-numero {
+  font-size:12px; font-weight:700; color:var(--green-morocco);
+  background:#f0f7f3; padding:3px 10px; border-radius:20px;
+  border:1px solid #c8e0d0;
+}
+.resa-urgence-haute { border-left:4px solid var(--red-morocco) !important; }
+.resa-urgence-normale { border-left:4px solid var(--gold-royal) !important; }
+.resa-card-body { padding:12px 16px; display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.resa-field { display:flex; flex-direction:column; }
+.resa-field-label { font-size:10px; color:#888; font-weight:600; text-transform:uppercase; margin-bottom:2px; }
+.resa-field-value { font-size:13px; font-weight:600; color:#333; }
+.resa-field-ar { font-size:10px; color:#aaa; direction:rtl; }
+.resa-card-footer {
+  padding:10px 16px; background:#fafaf8; border-top:1px solid #f0ebe0;
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+}
+
+.badge-attente { background:#fff3cd; color:#856404; border:1px solid #ffc107; }
+.badge-approuvee { background:#d1fae5; color:#065f46; border:1px solid #10b981; }
+.badge-refusee { background:#fee2e2; color:#991b1b; border:1px solid #ef4444; }
+.badge-urgente { background:#fee2e2; color:#991b1b; font-size:10px; }
+
+.empty-state { text-align:center; padding:60px 20px; color:#aaa; }
+.empty-state i { font-size:48px; display:block; margin-bottom:12px; opacity:.3; }
+.empty-state p { font-size:14px; }
+
+.modal-resa-form { display:flex; flex-direction:column; gap:14px; }
+.article-search-wrap { position:relative; }
+.article-dropdown {
+  position:absolute; top:100%; left:0; right:0; z-index:200;
+  background:#fff; border:1px solid #ccc; border-radius:6px;
+  max-height:220px; overflow-y:auto; box-shadow:0 4px 16px rgba(0,0,0,.15);
+  display:none;
+}
+.article-dropdown.show { display:block; }
+.article-option {
+  padding:9px 12px; cursor:pointer; border-bottom:1px solid #f5f5f5;
+  display:flex; align-items:center; justify-content:space-between;
+}
+.article-option:hover { background:#f0f7f3; }
+.article-option .art-id { font-size:10px; color:var(--green-morocco); font-weight:700; }
+.article-option .art-name { font-size:12px; font-weight:600; }
+.article-option .art-stock { font-size:10px; color:#888; }
+
+.notif-banner {
+  background:linear-gradient(135deg, #006233, #004225);
+  color:#fff; padding:12px 16px; border-radius:8px; margin-bottom:16px;
+  display:flex; align-items:center; gap:10px; font-size:13px;
+}
+.notif-banner i { font-size:18px; color:var(--gold-royal); }
+.notif-banner .count { font-size:22px; font-weight:800; color:var(--gold-royal); }
+</style>
+</head>
+<body>
+<script>
+const user = initPage('reservations', 'Réservations', 'الحجوزات');
+if (user) initReservations();
+
+let allReservations = [], allArticles = [];
+let currentTab = 'en_attente';
+let selectedArticle = null;
+
+async function initReservations() {
+  const content = document.getElementById('page-content');
+  const isAgent = user.role === 'agent';
+  const isRespo = ['admin','responsable'].includes(user.role);
+
+  content.innerHTML = `
+    <div class="page-header">
+      <div>
+        <div class="page-title-fr"><i class="fa-solid fa-bookmark"></i> Réservations de Matériel</div>
+        <div class="page-title-ar">حجوزات المواد</div>
+      </div>
+      ${isAgent ? `
+      <button class="btn btn-primary" onclick="openNewResaModal()">
+        <i class="fa-solid fa-plus"></i> Nouvelle Réservation / حجز جديد
+      </button>` : ''}
+    </div>
+
+    <div id="notif-area"></div>
+
+    <!-- TABS -->
+    <div class="resa-tabs">
+      <div class="resa-tab active" id="tab-en_attente" onclick="switchTab('en_attente')">
+        <i class="fa-solid fa-hourglass-half"></i>
+        En Attente <span class="ar" style="font-size:10px">قيد الانتظار</span>
+        <span class="badge-count" id="count-en_attente">0</span>
+      </div>
+      <div class="resa-tab" id="tab-approuvee" onclick="switchTab('approuvee')">
+        <i class="fa-solid fa-circle-check"></i>
+        Approuvées <span class="ar" style="font-size:10px">المقبولة</span>
+        <span class="badge-count" id="count-approuvee">0</span>
+      </div>
+      <div class="resa-tab" id="tab-refusee" onclick="switchTab('refusee')">
+        <i class="fa-solid fa-circle-xmark"></i>
+        Refusées <span class="ar" style="font-size:10px">المرفوضة</span>
+        <span class="badge-count" id="count-refusee">0</span>
+      </div>
+      ${isAgent ? '' : `
+      <div class="resa-tab" id="tab-all" onclick="switchTab('all')">
+        <i class="fa-solid fa-list"></i>
+        Toutes <span class="ar" style="font-size:10px">الكل</span>
+        <span class="badge-count" id="count-all">0</span>
+      </div>`}
+    </div>
+
+    <div id="resa-list"></div>`;
+
+  await loadData();
+  setInterval(loadData, 30000); // auto-refresh every 30s
+}
+
+async function loadData() {
+  try {
+    [allReservations, allArticles] = await Promise.all([
+      apiGet('/api/reservations'),
+      apiGet('/api/articles')
+    ]);
+    // Agent sees only their own
+    if (user.role === 'agent') {
+      allReservations = allReservations.filter(r => r.agent === user.username);
+    }
+    updateCounts();
+    renderNotifBanner();
+    renderList();
+  } catch(e) { console.error(e); }
+}
+
+function updateCounts() {
+  ['en_attente','approuvee','refusee'].forEach(s => {
+    const el = document.getElementById('count-' + s);
+    if (el) el.textContent = allReservations.filter(r => r.statut === s).length;
+  });
+  const allEl = document.getElementById('count-all');
+  if (allEl) allEl.textContent = allReservations.length;
+}
+
+function renderNotifBanner() {
+  const area = document.getElementById('notif-area');
+  if (!area) return;
+  const isRespo = ['admin','responsable'].includes(user.role);
+  const enAttente = allReservations.filter(r => r.statut === 'en_attente').length;
+  if (isRespo && enAttente > 0) {
+    area.innerHTML = `
+      <div class="notif-banner">
+        <i class="fa-solid fa-bell fa-shake"></i>
+        <span class="count">${enAttente}</span>
+        <div>
+          réservation(s) en attente de traitement — <span style="font-family:Cairo;direction:rtl">${enAttente} حجز في انتظار المعالجة</span>
+        </div>
+      </div>`;
+  } else {
+    area.innerHTML = '';
+  }
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.resa-tab').forEach(t => t.classList.remove('active'));
+  const el = document.getElementById('tab-' + tab);
+  if (el) el.classList.add('active');
+  renderList();
+}
+
+function renderList() {
+  const list = document.getElementById('resa-list');
+  if (!list) return;
+  const isRespo = ['admin','responsable'].includes(user.role);
+
+  let data = currentTab === 'all' ? allReservations
+    : allReservations.filter(r => r.statut === currentTab);
+
+  // Sort: urgente first, then by date
+  data = [...data].sort((a,b) => {
+    if (a.urgence === 'haute' && b.urgence !== 'haute') return -1;
+    if (b.urgence === 'haute' && a.urgence !== 'haute') return 1;
+    return new Date(b.date_demande) - new Date(a.date_demande);
+  });
+
+  if (!data.length) {
+    list.innerHTML = `<div class="empty-state">
+      <i class="fa-solid fa-bookmark"></i>
+      <p>Aucune réservation — لا توجد حجوزات</p>
+    </div>`;
+    return;
+  }
+
+  list.innerHTML = data.map(r => renderResaCard(r, isRespo)).join('');
+}
+
+function renderResaCard(r, isRespo) {
+  const urgClass = r.urgence === 'haute' ? 'resa-urgence-haute' : 'resa-urgence-normale';
+  const statutBadge = {
+    en_attente: `<span class="badge badge-attente"><i class="fa-solid fa-hourglass-half"></i> En attente / قيد الانتظار</span>`,
+    approuvee:  `<span class="badge badge-approuvee"><i class="fa-solid fa-circle-check"></i> Approuvée / مقبولة</span>`,
+    refusee:    `<span class="badge badge-refusee"><i class="fa-solid fa-circle-xmark"></i> Refusée / مرفوضة</span>`
+  }[r.statut] || '';
+
+  const urgBadge = r.urgence === 'haute'
+    ? `<span class="badge badge-urgente"><i class="fa-solid fa-bolt"></i> URGENT / عاجل</span>` : '';
+
+  const actions = isRespo && r.statut === 'en_attente' ? `
+    <button class="btn btn-sm" style="background:var(--success-green);color:#fff;font-size:11px"
+      onclick="traiterResa(${r.id}, 'approuvee')">
+      <i class="fa-solid fa-check"></i> Approuver / قبول
+    </button>
+    <button class="btn btn-sm btn-danger" style="font-size:11px"
+      onclick="traiterResa(${r.id}, 'refusee')">
+      <i class="fa-solid fa-times"></i> Refuser / رفض
+    </button>` : '';
+
+  const traitInfo = r.statut !== 'en_attente' && r.traite_par ? `
+    <span style="font-size:10px;color:#888;margin-left:auto">
+      <i class="fa-solid fa-user-check"></i> Traité par: ${esc(r.traite_par)}
+      ${r.commentaire_traitement ? ` — ${esc(r.commentaire_traitement)}` : ''}
+    </span>` : '';
+
+  return `
+  <div class="resa-card ${urgClass}">
+    <div class="resa-card-header">
+      <span class="resa-numero">${esc(r.numero)}</span>
+      ${urgBadge}
+      ${statutBadge}
+      <span style="font-size:11px;color:#888;margin-left:auto">${fmtDate(r.date_demande)}</span>
+    </div>
+    <div class="resa-card-body">
+      <div class="resa-field">
+        <span class="resa-field-label"><i class="fa-solid fa-box"></i> Article</span>
+        <span class="resa-field-value">${esc(r.article_designation)}</span>
+        <span class="resa-field-ar">${esc(r.article_designation_ar||'')}</span>
+        <span style="font-size:10px;color:var(--green-morocco);font-weight:700">${esc(r.article_id)}</span>
+      </div>
+      <div class="resa-field">
+        <span class="resa-field-label"><i class="fa-solid fa-scale-balanced"></i> Quantité demandée</span>
+        <span class="resa-field-value" style="font-size:16px;color:var(--red-morocco)">${r.quantite} <span style="font-size:12px;color:#888">${esc(r.article_unite)}</span></span>
+      </div>
+      <div class="resa-field">
+        <span class="resa-field-label"><i class="fa-solid fa-user"></i> Agent demandeur</span>
+        <span class="resa-field-value">${esc(r.nom_agent)}</span>
+      </div>
+      <div class="resa-field">
+        <span class="resa-field-label"><i class="fa-solid fa-hard-hat"></i> Chantier / الموقع</span>
+        <span class="resa-field-value">${esc(r.chantier||'—')}</span>
+      </div>
+      ${r.motif ? `<div class="resa-field" style="grid-column:1/-1">
+        <span class="resa-field-label"><i class="fa-solid fa-comment"></i> Motif / السبب</span>
+        <span class="resa-field-value" style="font-weight:400;font-size:12px">${esc(r.motif)}</span>
+      </div>` : ''}
+    </div>
+    <div class="resa-card-footer">
+      ${actions}
+      ${traitInfo}
+    </div>
+  </div>`;
+}
+
+// ─── NOUVELLE RÉSERVATION (AGENT) ─────────────────────────────────────────
+function openNewResaModal() {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'modal-resa';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:520px">
+      <div class="modal-header">
+        <div>
+          <h3><i class="fa-solid fa-bookmark"></i> Nouvelle Réservation</h3>
+          <div class="modal-header-ar">حجز جديد</div>
+        </div>
+        <button class="btn-close" onclick="document.getElementById('modal-resa').remove()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-resa-form">
+
+          <div class="form-group">
+            <label class="form-label">Article / المادة <span style="color:red">*</span></label>
+            <div class="article-search-wrap">
+              <input type="text" class="form-control" id="resa-art-search"
+                placeholder="Rechercher un article... / ابحث عن مادة"
+                oninput="searchResaArticle(this.value)" autocomplete="off">
+              <div class="article-dropdown" id="resa-art-dropdown"></div>
+            </div>
+            <div id="resa-art-info" style="display:none;margin-top:6px;padding:8px;background:#f0f7f3;border-radius:6px;font-size:12px">
+              <span id="resa-art-detail"></span>
+            </div>
+            <input type="hidden" id="resa-art-id">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Quantité <span style="color:red">*</span></label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="number" class="form-control" id="resa-quantite"
+                min="0.001" step="any" placeholder="0" style="max-width:160px">
+              <span id="resa-unite" style="font-size:13px;color:#888;font-weight:600"></span>
+            </div>
+            <div id="resa-stock-info" style="font-size:11px;color:var(--green-morocco);margin-top:4px"></div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Chantier / Localisation <span style="color:red">*</span></label>
+            <input type="text" class="form-control" id="resa-chantier" placeholder="Ex: Rue Hassan II, Quartier Agdal...">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Motif / السبب</label>
+            <textarea class="form-control" id="resa-motif" rows="2"
+              placeholder="Raison de la demande / سبب الطلب" style="resize:vertical"></textarea>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Niveau d'urgence / مستوى الاستعجال</label>
+            <div style="display:flex;gap:10px">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+                <input type="radio" name="urgence" value="normale" checked> Normale / عادي
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--red-morocco)">
+                <input type="radio" name="urgence" value="haute"> <i class="fa-solid fa-bolt"></i> Urgent / عاجل
+              </label>
+            </div>
+          </div>
+
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="document.getElementById('modal-resa').remove()">
+          Annuler / إلغاء
+        </button>
+        <button class="btn btn-primary" onclick="submitResa()">
+          <i class="fa-solid fa-paper-plane"></i> Envoyer la demande / إرسال الطلب
+        </button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+  document.getElementById('resa-art-search').focus();
+}
+
+let searchDebounce = null;
+function searchResaArticle(q) {
+  selectedArticle = null;
+  document.getElementById('resa-art-id').value = '';
+  document.getElementById('resa-art-info').style.display = 'none';
+  document.getElementById('resa-stock-info').textContent = '';
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(() => {
+    const dropdown = document.getElementById('resa-art-dropdown');
+    if (!q.trim()) { dropdown.classList.remove('show'); return; }
+    const sq = q.toLowerCase();
+    const results = allArticles.filter(a =>
+      a.id.toLowerCase().includes(sq) ||
+      a.designation.toLowerCase().includes(sq) ||
+      (a.designation_ar && a.designation_ar.includes(q))
+    ).slice(0, 12);
+    if (!results.length) {
+      dropdown.innerHTML = `<div style="padding:10px;color:#888;font-size:12px">Aucun article trouvé</div>`;
+    } else {
+      dropdown.innerHTML = results.map(a => `
+        <div class="article-option" onclick="selectResaArticle('${a.id}')">
+          <div>
+            <div class="art-id">${esc(a.id)}</div>
+            <div class="art-name">${esc(a.designation)}</div>
+          </div>
+          <div class="art-stock">
+            ${a.quantite > 0 ? `<span style="color:var(--success-green)">${a.quantite} ${a.unite}</span>` : `<span style="color:var(--red-morocco)">Rupture</span>`}
+          </div>
+        </div>`).join('');
+    }
+    dropdown.classList.add('show');
+  }, 200);
+}
+
+function selectResaArticle(id) {
+  selectedArticle = allArticles.find(a => a.id === id);
+  if (!selectedArticle) return;
+  document.getElementById('resa-art-search').value = `${selectedArticle.id} — ${selectedArticle.designation}`;
+  document.getElementById('resa-art-id').value = selectedArticle.id;
+  document.getElementById('resa-art-dropdown').classList.remove('show');
+  document.getElementById('resa-unite').textContent = selectedArticle.unite;
+  document.getElementById('resa-stock-info').innerHTML =
+    `Stock actuel: <strong>${selectedArticle.quantite} ${selectedArticle.unite}</strong>`;
+  document.getElementById('resa-art-info').style.display = 'block';
+  document.getElementById('resa-art-detail').innerHTML =
+    `<i class="fa-solid fa-check" style="color:var(--success-green)"></i>
+     <strong>${selectedArticle.designation}</strong>
+     ${selectedArticle.designation_ar ? `— <span style="direction:rtl">${selectedArticle.designation_ar}</span>` : ''}
+     — Section: ${selectedArticle.section}`;
+  document.getElementById('resa-quantite').focus();
+}
+
+async function submitResa() {
+  const artId    = document.getElementById('resa-art-id').value;
+  const quantite = parseFloat(document.getElementById('resa-quantite').value);
+  const chantier = document.getElementById('resa-chantier').value.trim();
+  const motif    = document.getElementById('resa-motif').value.trim();
+  const urgence  = document.querySelector('input[name="urgence"]:checked')?.value || 'normale';
+
+  if (!artId) { toast('Veuillez sélectionner un article', 'error', 'يرجى اختيار مادة'); return; }
+  if (!quantite || quantite <= 0) { toast('Quantité invalide', 'error', 'كمية غير صالحة'); return; }
+  if (!chantier) { toast('Veuillez indiquer le chantier', 'error', 'يرجى تحديد موقع العمل'); return; }
+
+  try {
+    await apiPost('/api/reservations', {
+      article_id: artId,
+      quantite,
+      motif,
+      chantier,
+      urgence,
+      utilisateur: user.username,
+      nom_agent: user.nom
+    });
+    document.getElementById('modal-resa').remove();
+    toast('Réservation envoyée avec succès!', 'success', 'تم إرسال الحجز بنجاح');
+    await loadData();
+    switchTab('en_attente');
+  } catch(e) {
+    toast(e.message || 'Erreur', 'error');
+  }
+}
+
+// ─── TRAITEMENT (RESPO/ADMIN) ─────────────────────────────────────────────
+function traiterResa(id, statut) {
+  const resa = allReservations.find(r => r.id === id);
+  if (!resa) return;
+
+  const isApprouver = statut === 'approuvee';
+  const art = allArticles.find(a => a.id === resa.article_id);
+  const stockOk = art && art.quantite >= resa.quantite;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'modal-traitement';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:460px">
+      <div class="modal-header" style="background:${isApprouver ? 'var(--success-green)' : 'var(--red-morocco)'}">
+        <div>
+          <h3><i class="fa-solid fa-${isApprouver ? 'check' : 'times'}-circle"></i>
+            ${isApprouver ? 'Approuver' : 'Refuser'} la réservation
+          </h3>
+          <div class="modal-header-ar">${isApprouver ? 'قبول الحجز' : 'رفض الحجز'}</div>
+        </div>
+        <button class="btn-close" style="color:#fff" onclick="document.getElementById('modal-traitement').remove()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="background:#f9f7f2;border-radius:8px;padding:12px;margin-bottom:14px;font-size:13px">
+          <div style="font-weight:700;margin-bottom:6px">${esc(resa.numero)} — ${esc(resa.nom_agent)}</div>
+          <div>${esc(resa.article_designation)}</div>
+          <div style="font-size:16px;font-weight:700;color:var(--red-morocco);margin-top:4px">
+            ${resa.quantite} ${esc(resa.article_unite)}
+          </div>
+          ${isApprouver && !stockOk ? `
+          <div style="margin-top:8px;padding:8px;background:#fee2e2;border-radius:6px;color:#991b1b;font-size:12px">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            Stock insuffisant! Disponible: ${art ? art.quantite : 0} ${esc(resa.article_unite)}
+          </div>` : ''}
+          ${isApprouver && stockOk ? `
+          <div style="margin-top:8px;padding:8px;background:#d1fae5;border-radius:6px;color:#065f46;font-size:12px">
+            <i class="fa-solid fa-circle-check"></i>
+            Un bon de sortie sera créé automatiquement.
+            <span style="font-family:Cairo;direction:rtl;display:block">سيتم إنشاء وصل خروج تلقائياً.</span>
+          </div>` : ''}
+        </div>
+        <div class="form-group">
+          <label class="form-label">Commentaire (optionnel) / تعليق</label>
+          <textarea class="form-control" id="traitement-commentaire" rows="2"
+            placeholder="Raison / ملاحظة..." style="resize:vertical"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="document.getElementById('modal-traitement').remove()">
+          Annuler / إلغاء
+        </button>
+        <button class="btn" style="background:${isApprouver ? 'var(--success-green)' : 'var(--red-morocco)'};color:#fff"
+          ${isApprouver && !stockOk ? 'disabled title="Stock insuffisant"' : ''}
+          onclick="confirmTraitement(${id}, '${statut}')">
+          <i class="fa-solid fa-${isApprouver ? 'check' : 'times'}"></i>
+          ${isApprouver ? 'Confirmer l\'approbation' : 'Confirmer le refus'}
+        </button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+}
+
+async function confirmTraitement(id, statut) {
+  const commentaire = document.getElementById('traitement-commentaire')?.value || '';
+  try {
+    await apiPut('/api/reservations/' + id, {
+      statut,
+      commentaire_traitement: commentaire,
+      utilisateur: user.nom
+    });
+    document.getElementById('modal-traitement')?.remove();
+    const msg = statut === 'approuvee' ? 'Réservation approuvée — bon de sortie créé!' : 'Réservation refusée.';
+    const msgAr = statut === 'approuvee' ? 'تم قبول الحجز وإنشاء وصل الخروج' : 'تم رفض الحجز';
+    toast(msg, statut === 'approuvee' ? 'success' : 'warning', msgAr);
+    await loadData();
+    switchTab(statut);
+  } catch(e) {
+    toast(e.message || 'Erreur', 'error');
+  }
+}
+
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>

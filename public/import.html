@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Import Articles — Agdal-Ryad</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="js/app.js"></script>
+</head>
+<body>
+<script>
+const user = initPage('import', 'Import Articles', 'استيراد المواد', ['admin','responsable']);
+if (user) initImport();
+
+function initImport() {
+  const content = document.getElementById('page-content');
+  content.innerHTML = `
+    <div class="page-header">
+      <div>
+        <div class="page-title-fr"><i class="fa-solid fa-file-arrow-up"></i> Import d'Articles</div>
+        <div class="page-title-ar">استيراد المواد</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <i class="fa-solid fa-download"></i> Télécharger le modèle / تحميل النموذج
+      </div>
+      <div class="card-body">
+        <p style="font-size:13px;color:#666;margin-bottom:16px">
+          Téléchargez un fichier Excel modèle avec les colonnes requises pour l'import.
+        </p>
+        <button class="btn btn-primary" onclick="downloadTemplate()">
+          <i class="fa-solid fa-download"></i> Télécharger modèle Excel / تحميل نموذج Excel
+        </button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="card-header">
+        <i class="fa-solid fa-upload"></i> Zone d'upload / منطقة التحميل
+      </div>
+      <div class="card-body">
+        <div id="drop-zone" class="drop-zone">
+          <div class="drop-zone-content">
+            <i class="fa-solid fa-file-arrow-up drop-icon"></i>
+            <div class="drop-text">
+              Glissez-déposez votre fichier ici<br>
+              <span style="font-size:11px;color:#888">Formats acceptés: .xlsx, .xls, .csv, .docx</span>
+            </div>
+          </div>
+        </div>
+        <div id="file-info" style="display:none;margin-top:16px;padding:12px;background:#f8f9fa;border-radius:6px;border:1px solid #dee2e6">
+          <div style="display:flex;align-items:center;gap:12px">
+            <i class="fa-solid fa-file-excel" style="color:#217346;font-size:20px"></i>
+            <div>
+              <div id="file-name" style="font-weight:600"></div>
+              <div id="file-size" style="font-size:11px;color:#888"></div>
+            </div>
+            <button class="btn btn-primary" id="import-btn" onclick="startImport()">
+              <i class="fa-solid fa-play"></i> Lancer l'import
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="results-section" class="card" style="margin-top:16px;display:none">
+      <div class="card-header">
+        <i class="fa-solid fa-chart-bar"></i> Résultats de l'import / نتائج الاستيراد
+      </div>
+      <div class="card-body">
+        <div class="stats-grid">
+          <div class="stat-card stat-success">
+            <div class="stat-icon"><i class="fa-solid fa-plus"></i></div>
+            <div class="stat-content">
+              <div class="stat-number" id="ajoutes-count">0</div>
+              <div class="stat-label">Articles ajoutés</div>
+            </div>
+          </div>
+          <div class="stat-card stat-info">
+            <div class="stat-icon"><i class="fa-solid fa-edit"></i></div>
+            <div class="stat-content">
+              <div class="stat-number" id="mis-a-jour-count">0</div>
+              <div class="stat-label">Articles mis à jour</div>
+            </div>
+          </div>
+          <div class="stat-card stat-error">
+            <div class="stat-icon"><i class="fa-solid fa-exclamation-triangle"></i></div>
+            <div class="stat-content">
+              <div class="stat-number" id="erreurs-count">0</div>
+              <div class="stat-label">Erreurs</div>
+            </div>
+          </div>
+        </div>
+        <div id="erreurs-list" style="margin-top:20px;display:none">
+          <h4 style="margin-bottom:12px;color:#C1272D">Détail des erreurs / تفاصيل الأخطاء</h4>
+          <div id="erreurs-content"></div>
+        </div>
+      </div>
+    </div>`;
+
+  setupDropZone();
+}
+
+function downloadTemplate() {
+  const data = [
+    ['id', 'designation', 'designation_ar', 'section', 'categorie_id', 'quantite', 'unite', 'seuil'],
+    ['V-001', 'Tuyau PVC 100mm', 'أنبوب PVC 100 مم', 'Voirie', 1, 50, 'm', 10],
+    ['EP-001', 'Lampe LED 50W', 'مصباح LED 50 واط', 'Éclairage Public', 2, 25, 'pièce', 5]
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Articles');
+  XLSX.writeFile(wb, 'modele_import_articles.xlsx');
+}
+
+function setupDropZone() {
+  const dropZone = document.getElementById('drop-zone');
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = '.xlsx,.xls,.csv,.docx';
+  fileInput.style.display = 'none';
+  document.body.appendChild(fileInput);
+
+  dropZone.onclick = () => fileInput.click();
+  fileInput.onchange = (e) => handleFile(e.target.files[0]);
+
+  dropZone.ondragover = (e) => {
+    e.preventDefault();
+    dropZone.classList.add('dragover');
+  };
+  dropZone.ondragleave = () => dropZone.classList.remove('dragover');
+  dropZone.ondrop = (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    const files = e.dataTransfer.files;
+    if (files.length) handleFile(files[0]);
+  };
+}
+
+function handleFile(file) {
+  if (!file) return;
+
+  const allowedTypes = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                       'application/vnd.ms-excel',
+                       'text/csv',
+                       'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+
+  if (!allowedTypes.includes(file.type) && !file.name.match(/\.(xlsx|xls|csv|docx)$/i)) {
+    toast('Format de fichier non supporté', 'error', 'تنسيق الملف غير مدعوم');
+    return;
+  }
+
+  document.getElementById('file-name').textContent = file.name;
+  document.getElementById('file-size').textContent = formatFileSize(file.size);
+  document.getElementById('file-info').style.display = 'block';
+  window.selectedFile = file;
+}
+
+function formatFileSize(bytes) {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+async function startImport() {
+  if (!window.selectedFile) return;
+
+  const formData = new FormData();
+  formData.append('file', window.selectedFile);
+
+  document.getElementById('import-btn').disabled = true;
+  document.getElementById('import-btn').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Import en cours...';
+
+  try {
+    const response = await fetch('/api/import-articles', {
+      method: 'POST',
+      body: formData
+    });
+
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error);
+
+    document.getElementById('ajoutes-count').textContent = result.ajoutes;
+    document.getElementById('mis-a-jour-count').textContent = result.mis_a_jour;
+    document.getElementById('erreurs-count').textContent = result.erreurs.length;
+
+    if (result.erreurs.length > 0) {
+      document.getElementById('erreurs-list').style.display = 'block';
+      document.getElementById('erreurs-content').innerHTML = result.erreurs.map(err =>
+        `<div style="padding:8px;margin:4px 0;background:#fff5f5;border:1px solid #fed7d7;border-radius:4px">
+          <strong>Ligne ${err.ligne}:</strong> ${err.raison}
+        </div>`
+      ).join('');
+    } else {
+      document.getElementById('erreurs-list').style.display = 'none';
+    }
+
+    document.getElementById('results-section').style.display = 'block';
+    toast('Import terminé avec succès', 'success', 'تم الاستيراد بنجاح');
+  } catch (error) {
+    toast('Erreur lors de l\'import: ' + error.message, 'error', 'خطأ في الاستيراد');
+  } finally {
+    document.getElementById('import-btn').disabled = false;
+    document.getElementById('import-btn').innerHTML = '<i class="fa-solid fa-play"></i> Lancer l\'import';
+  }
+}
+</script>
+
+<style>
+.drop-zone {
+  border: 2px dashed #006233;
+  border-radius: 8px;
+  padding: 40px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: #f8f9fa;
+}
+
+.drop-zone:hover, .drop-zone.dragover {
+  background: #e8f5e8;
+  border-color: #004225;
+}
+
+.drop-icon {
+  font-size: 48px;
+  color: #006233;
+  margin-bottom: 16px;
+}
+
+.drop-text {
+  font-size: 16px;
+  color: #666;
+  line-height: 1.5;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.stat-card {
+  display: flex;
+  align-items: center;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+
+.stat-success { background: #d4edda; border-color: #c3e6cb; }
+.stat-info { background: #d1ecf1; border-color: #bee5eb; }
+.stat-error { background: #f8d7da; border-color: #f5c6cb; }
+
+.stat-icon {
+  font-size: 24px;
+  margin-right: 12px;
+}
+
+.stat-success .stat-icon { color: #155724; }
+.stat-info .stat-icon { color: #0c5460; }
+.stat-error .stat-icon { color: #721c24; }
+
+.stat-number {
+  font-size: 28px;
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.stat-success .stat-number { color: #155724; }
+.stat-info .stat-number { color: #0c5460; }
+.stat-error .stat-number { color: #721c24; }
+
+.stat-label {
+  font-size: 12px;
+  color: #666;
+}
+</style>
+</body>
+</html>

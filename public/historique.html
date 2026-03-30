@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Historique — Stock Agdal-Ryad</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="js/app.js"></script>
+</head>
+<body>
+<script>
+const user = initPage('historique', 'Historique', 'السجل التاريخي');
+if (user) {
+  if (!['admin','responsable'].includes(user.role)) {
+    window.location.href = 'dashboard.html';
+  } else {
+    initHistorique();
+  }
+}
+
+let allHist = [], filteredHist = [];
+
+async function initHistorique() {
+  const content = document.getElementById('page-content');
+  content.innerHTML = `
+    <div class="page-header">
+      <div>
+        <div class="page-title-fr"><i class="fa-solid fa-clock-rotate-left"></i> Historique des Actions</div>
+        <div class="page-title-ar">السجل التاريخي للعمليات</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span id="last-refresh" style="font-size:10px;color:#aaa"></span>
+        <button class="btn btn-outline btn-sm" onclick="loadHist()">
+          <i class="fa-solid fa-rotate-right"></i> Actualiser
+        </button>
+        <button class="btn btn-gold" onclick="exportPDF()">
+          <i class="fa-solid fa-file-pdf"></i> Exporter PDF / تصدير PDF
+        </button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><i class="fa-solid fa-filter"></i> Filtres / الفلاتر</div>
+      <div class="card-body">
+        <div class="filters-bar">
+          <select class="form-control" id="f-action" style="width:200px" onchange="applyFilters()">
+            <option value="">Toutes actions</option>
+            <option value="Ajout article">Ajout article</option>
+            <option value="Modification article">Modification article</option>
+            <option value="Suppression article">Suppression article</option>
+            <option value="Bon de sortie">Bon de sortie</option>
+            <option value="Bon d'entrée">Bon d'entrée</option>
+            <option value="Réservation article">Réservation article</option>
+            <option value="Approbation réservation">Approbation réservation</option>
+            <option value="Refus réservation">Refus réservation</option>
+          </select>
+          <input type="text" class="form-control" id="f-user" placeholder="Utilisateur / المستخدم" style="width:180px" oninput="applyFilters()">
+          <input type="date" class="form-control" id="f-from" style="width:150px" onchange="applyFilters()">
+          <span style="font-size:12px;color:#888;align-self:center">→</span>
+          <input type="date" class="form-control" id="f-to" style="width:150px" onchange="applyFilters()">
+          <button class="btn btn-outline btn-sm" onclick="clearFilters()">
+            <i class="fa-solid fa-times"></i> Réinitialiser
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="card-header">
+        <i class="fa-solid fa-list"></i> Journal d'audit — سجل المراجعة
+        <span id="hist-count" style="margin-left:auto;font-size:11px;opacity:0.7"></span>
+      </div>
+      <div class="card-body" style="padding:0">
+        <div class="table-container">
+          <table>
+            <thead><tr>
+              <th>Date/Heure</th>
+              <th>Utilisateur / المستخدم</th>
+              <th>Action</th>
+              <th>Article</th>
+              <th>Détail / التفاصيل</th>
+            </tr></thead>
+            <tbody id="hist-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <p style="font-size:10px;color:#aaa;margin-top:8px;text-align:center">
+      <i class="fa-solid fa-lock"></i> L'historique est en lecture seule et ne peut pas être supprimé — السجل للقراءة فقط
+    </p>`;
+
+  await loadHist();
+  // Auto-refresh toutes les 15 secondes
+  setInterval(loadHist, 15000);
+}
+
+async function loadHist() {
+  allHist = await apiGet('/api/historique');
+  const el = document.getElementById('last-refresh');
+  if (el) el.textContent = 'Mis à jour: ' + new Date().toLocaleTimeString('fr-MA');
+  applyFilters();
+}
+
+function applyFilters() {
+  const action = document.getElementById('f-action').value;
+  const userQ = document.getElementById('f-user').value.toLowerCase();
+  const from = document.getElementById('f-from').value;
+  const to = document.getElementById('f-to').value;
+  
+  filteredHist = allHist.filter(h => {
+    if (action && h.action !== action) return false;
+    if (userQ && !h.utilisateur.toLowerCase().includes(userQ)) return false;
+    if (from && h.date < from) return false;
+    if (to && h.date > to + 'T23:59:59') return false;
+    return true;
+  });
+  
+  document.getElementById('hist-count').textContent = `${filteredHist.length} entrée(s)`;
+  renderTable();
+}
+
+function clearFilters() {
+  ['f-action','f-user','f-from','f-to'].forEach(id => document.getElementById(id).value = '');
+  applyFilters();
+}
+
+const actionColors = {
+  'Ajout article': 'badge-entree',
+  'Modification article': 'badge-admin',
+  'Suppression article': 'badge-rupture',
+  'Bon de sortie': 'badge-sortie',
+  "Bon d'entrée": 'badge-entree',
+  'Réservation article': 'badge-responsable',
+  'Approbation réservation': 'badge-disponible',
+  'Refus réservation': 'badge-rupture'
+};
+
+function renderTable() {
+  const tbody = document.getElementById('hist-tbody');
+  if (!filteredHist.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#888;padding:24px">Aucune entrée trouvée</td></tr>';
+    return;
+  }
+  tbody.innerHTML = filteredHist.slice(0,200).map(h => `
+    <tr>
+      <td style="font-size:10px;white-space:nowrap;color:#666">${fmtDate(h.date)}</td>
+      <td>
+        <div style="font-size:11px;font-weight:600">${h.utilisateur}</div>
+      </td>
+      <td><span class="badge ${actionColors[h.action] || 'badge-agent'}">${h.action}</span></td>
+      <td style="font-size:11px;font-weight:600;color:var(--green-morocco)">${h.article_id || '—'}</td>
+      <td style="font-size:11px;max-width:300px">${h.detail || '—'}</td>
+    </tr>`).join('');
+}
+
+async function exportPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape' });
+  const W = doc.internal.pageSize.width;
+  
+  doc.setFillColor(0,66,37);
+  doc.rect(0,0,W,30,'F');
+  doc.setTextColor(201,168,76);
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(8);
+  ['ROYAUME DU MAROC | MINISTERE DE L\'INTERIEUR | WILAYA RABAT-SALE-KENITRA','COMMUNE DE RABAT — ARRONDISSEMENT AGDAL-RYAD — SERVICE VOIRIE & ECLAIRAGE PUBLIC'].forEach((l,i)=>doc.text(l,10,10+i*7));
+  doc.setFontSize(11);
+  doc.text('HISTORIQUE DES ACTIONS — سجل العمليات', W/2, 25, {align:'center'});
+  doc.setTextColor(30,30,30);
+  
+  const rows = filteredHist.slice(0,500).map(h => [
+    fmtDate(h.date), h.utilisateur, h.action, h.article_id || '—', (h.detail || '').substring(0,60)
+  ]);
+  
+  doc.autoTable({
+    head: [['Date/Heure','Utilisateur','Action','Article','Détail']],
+    body: rows,
+    startY: 36,
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: [0,66,37], textColor: [201,168,76], fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [245,245,240] }
+  });
+  
+  const today = new Date().toLocaleDateString('fr-MA');
+  doc.setFontSize(7);
+  doc.setTextColor(150,150,150);
+  doc.text(`Établi le ${today} par ${user.nom}`, W/2, doc.internal.pageSize.height-5, {align:'center'});
+  
+  doc.save(`Historique_${new Date().toISOString().slice(0,10)}.pdf`);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tableau de bord — Stock Agdal-Ryad</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="js/app.js"></script>
+</head>
+<body>
+<script>
+const user = initPage('dashboard', 'Tableau de bord', 'لوحة القيادة');
+if (user) loadDashboard();
+
+let barChart, pieChart;
+
+async function loadDashboard() {
+  const content = document.getElementById('page-content');
+  content.innerHTML = `
+    <div class="page-header">
+      <div>
+        <div class="page-title-fr"><i class="fa-solid fa-gauge"></i> Tableau de bord</div>
+        <div class="page-title-ar">لوحة القيادة</div>
+      </div>
+      <div style="font-size:11px;color:#888" id="last-update"></div>
+    </div>
+    <div class="stats-grid" id="stats-grid"></div>
+    <div class="charts-grid">
+      <div class="card">
+        <div class="card-header"><i class="fa-solid fa-chart-bar"></i> Stock par Catégorie / المخزون حسب الفئة</div>
+        <div class="card-body"><canvas id="barChart" height="200"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><i class="fa-solid fa-chart-pie"></i> Voirie vs Éclairage Public</div>
+        <div class="card-body" style="display:flex;align-items:center;justify-content:center">
+          <canvas id="pieChart" height="200" style="max-width:220px"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><i class="fa-solid fa-right-left"></i> Derniers Mouvements / آخر الحركات</div>
+      <div class="card-body">
+        <div class="table-container"><table><thead><tr>
+          <th>Date / التاريخ</th><th>Type / النوع</th><th>Article / المادة</th>
+          <th>Quantité / الكمية</th><th>Demandeur / الطالب</th><th>Validé par</th>
+        </tr></thead><tbody id="mouvements-tbody"></tbody></table></div>
+      </div>
+    </div>`;
+  
+  await refreshDashboard();
+  setInterval(refreshDashboard, 15000);
+}
+
+async function refreshDashboard() {
+  try {
+    const [stats, mouvs] = await Promise.all([
+      apiGet('/api/stats'),
+      apiGet('/api/mouvements?limit=10')
+    ]);
+    renderStats(stats);
+    renderCharts(stats);
+    renderMouvements(mouvs);
+    document.getElementById('last-update').textContent = 'Mise à jour: ' + new Date().toLocaleTimeString('fr-MA');
+  } catch(e) { console.error(e); }
+}
+
+function renderStats(s) {
+  document.getElementById('stats-grid').innerHTML = `
+    <div class="stat-card success">
+      <div class="stat-icon"><i class="fa-solid fa-boxes-stacking"></i></div>
+      <div>
+        <div class="stat-value">${s.total_articles}</div>
+        <div class="stat-label">Total Articles</div>
+        <div class="stat-label-ar">إجمالي المواد</div>
+      </div>
+    </div>
+    <div class="stat-card warning">
+      <div class="stat-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+      <div>
+        <div class="stat-value" style="color:var(--alert-orange)">${s.stock_faible}</div>
+        <div class="stat-label">Stock Faible</div>
+        <div class="stat-label-ar">مخزون منخفض</div>
+      </div>
+    </div>
+    <div class="stat-card danger">
+      <div class="stat-icon"><i class="fa-solid fa-circle-xmark"></i></div>
+      <div>
+        <div class="stat-value" style="color:var(--red-morocco)">${s.ruptures}</div>
+        <div class="stat-label">Ruptures de Stock</div>
+        <div class="stat-label-ar">نفاد المخزون</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon"><i class="fa-solid fa-right-left"></i></div>
+      <div>
+        <div class="stat-value">${s.mouvements_jour}</div>
+        <div class="stat-label">Mouvements du Jour</div>
+        <div class="stat-label-ar">حركات اليوم</div>
+      </div>
+    </div>
+    <div class="stat-card" style="cursor:pointer" onclick="window.location.href='reservations.html'">
+      <div class="stat-icon" style="background:rgba(201,168,76,0.15)"><i class="fa-solid fa-bookmark" style="color:var(--gold-royal)"></i></div>
+      <div>
+        <div class="stat-value" style="color:var(--gold-royal)">${s.reservations_attente || 0}</div>
+        <div class="stat-label">Réservations en Attente</div>
+        <div class="stat-label-ar">حجوزات في الانتظار</div>
+      </div>
+    </div>`;
+}
+
+function renderCharts(s) {
+  const cats = s.par_categorie.filter(c => c.total > 0 || c.articles > 0);
+  
+  if (barChart) barChart.destroy();
+  const ctx1 = document.getElementById('barChart').getContext('2d');
+  barChart = new Chart(ctx1, {
+    type: 'bar',
+    data: {
+      labels: cats.map(c => c.categorie.substring(0, 20)),
+      datasets: [{
+        label: 'Quantité totale',
+        data: cats.map(c => Math.round(c.total * 100) / 100),
+        backgroundColor: cats.map(c => c.section === 'Voirie' ? 'rgba(0,98,51,0.7)' : 'rgba(201,168,76,0.7)'),
+        borderColor: cats.map(c => c.section === 'Voirie' ? '#006233' : '#C9A84C'),
+        borderWidth: 1
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true }, x: { ticks: { font: { size: 9 } } } }
+    }
+  });
+
+  if (pieChart) pieChart.destroy();
+  const ctx2 = document.getElementById('pieChart').getContext('2d');
+  pieChart = new Chart(ctx2, {
+    type: 'pie',
+    data: {
+      labels: ['Voirie / الطرق', 'Éclairage Public / الإنارة'],
+      datasets: [{
+        data: [s.voirie_count, s.ep_count],
+        backgroundColor: ['rgba(0,98,51,0.8)', 'rgba(201,168,76,0.8)'],
+        borderColor: ['#006233', '#C9A84C'],
+        borderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: 'bottom', labels: { font: { size: 10 } } } }
+    }
+  });
+}
+
+function renderMouvements(mouvs) {
+  const tbody = document.getElementById('mouvements-tbody');
+  if (!mouvs.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#888;padding:20px">Aucun mouvement enregistré / لا توجد حركات</td></tr>';
+    return;
+  }
+  tbody.innerHTML = mouvs.map(m => `
+    <tr>
+      <td style="font-size:11px">${fmtDate(m.date)}</td>
+      <td>${m.type === 'sortie' ? '<span class="badge badge-sortie"><i class="fa-solid fa-arrow-up-right-from-square"></i> Sortie</span>' : '<span class="badge badge-entree"><i class="fa-solid fa-arrow-down-left"></i> Entrée</span>'}</td>
+      <td>
+        <div style="font-size:12px;font-weight:600">${m.article_designation}</div>
+        <div style="font-size:10px;color:#888;direction:rtl">${m.article_designation_ar || ''}</div>
+      </td>
+      <td>${fmtQty(m.quantite, m.article_unite)}</td>
+      <td style="font-size:11px">${m.demandeur || '—'}</td>
+      <td style="font-size:11px">${m.valide_par || '—'}</td>
+    </tr>`).join('');
+}
+</script>
+</body>
+</html>
