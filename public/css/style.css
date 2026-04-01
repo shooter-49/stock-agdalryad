@@ -698,3 +698,128 @@ select.form-control { cursor: pointer; }
 /* ===== REPORT TABLE ===== */
 .report-table thead th { font-size: 10px; padding: 7px 10px; }
 .report-table tbody td { padding: 6px 10px; font-size: 11px; }
+
+/* ═══════════════════════════════════════
+   RESPONSIVE MOBILE
+═══════════════════════════════════════ */
+
+/* Bouton hamburger — visible seulement sur mobile */
+.hamburger-btn {
+  display: none;
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 1000;
+  background: var(--green-morocco);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  width: 42px;
+  height: 42px;
+  font-size: 18px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+/* Overlay sombre derrière la sidebar sur mobile */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 998;
+}
+
+@media (max-width: 768px) {
+
+  /* Cacher le hamburger par défaut */
+  .hamburger-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Sidebar cachée par défaut sur mobile */
+  .sidebar {
+    position: fixed;
+    left: -280px;
+    top: 0;
+    height: 100vh;
+    z-index: 999;
+    transition: left 0.3s ease;
+    width: 260px !important;
+  }
+
+  /* Sidebar visible quand active */
+  .sidebar.mobile-open {
+    left: 0;
+  }
+
+  /* Overlay visible quand sidebar ouverte */
+  .sidebar-overlay.active {
+    display: block;
+  }
+
+  /* Contenu principal prend toute la largeur */
+  .main-content {
+    margin-left: 0 !important;
+    width: 100% !important;
+  }
+
+  /* Navbar top ajustée pour le bouton hamburger */
+  .top-navbar {
+    padding-left: 64px !important;
+  }
+
+  /* Tableaux scrollables horizontalement */
+  .table-container {
+    overflow-x: auto;
+  }
+
+  /* Cards en colonne sur mobile */
+  .stat-cards-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  /* Page header en colonne */
+  .page-header {
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-start !important;
+  }
+
+  /* Filtres en colonne */
+  .filters-bar {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+
+  .filters-bar input,
+  .filters-bar select {
+    width: 100% !important;
+  }
+
+  /* Modals plein écran sur mobile */
+  .modal {
+    width: 95vw !important;
+    max-width: 95vw !important;
+    margin: 10px auto;
+  }
+
+  /* Official header plus compact */
+  .official-header-band {
+    padding: 6px 10px !important;
+    font-size: 8px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .stat-cards-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .chart-row {
+    grid-template-columns: 1fr !important;
+  }
+}
+

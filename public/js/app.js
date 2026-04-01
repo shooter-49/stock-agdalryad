@@ -275,6 +275,44 @@ function initPage(activePage, pageTitle, pageTitleAr, allowedRoles) {
       <div class="page-content" id="page-content"></div>
     </div>`;
 
+  // Ajouter bouton hamburger pour mobile
+  const hamburger = document.createElement('button');
+  hamburger.className = 'hamburger-btn';
+  hamburger.innerHTML = '<i class="fa-solid fa-bars"></i>';
+  document.body.appendChild(hamburger);
+
+  // Overlay
+  const overlay = document.createElement('div');
+  overlay.className = 'sidebar-overlay';
+  document.body.appendChild(overlay);
+
+  const sidebar = document.querySelector('.sidebar');
+
+  hamburger.onclick = () => {
+    sidebar.classList.toggle('mobile-open');
+    overlay.classList.toggle('active');
+    hamburger.innerHTML = sidebar.classList.contains('mobile-open')
+      ? '<i class="fa-solid fa-times"></i>'
+      : '<i class="fa-solid fa-bars"></i>';
+  };
+
+  overlay.onclick = () => {
+    sidebar.classList.remove('mobile-open');
+    overlay.classList.remove('active');
+    hamburger.innerHTML = '<i class="fa-solid fa-bars"></i>';
+  };
+
+  // Fermer sidebar quand on clique un lien nav sur mobile
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.addEventListener('click', () => {
+      if (window.innerWidth <= 768) {
+        sidebar.classList.remove('mobile-open');
+        overlay.classList.remove('active');
+        hamburger.innerHTML = '<i class="fa-solid fa-bars"></i>';
+      }
+    });
+  });
+
   // Load reservations badge (respo/admin only)
   if (['admin','responsable'].includes(user.role)) {
     updateResaBadge();
