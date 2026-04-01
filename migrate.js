@@ -3,11 +3,13 @@
  * Exécuter UNE SEULE FOIS après déploiement :  node migrate.js
  */
 require('dotenv').config();
+const dns = require('dns');
+dns.setServers(['8.8.8.8', '8.8.4.4']);
 const mongoose = require('mongoose');
 const fs       = require('fs');
 const path     = require('path');
 
-const MONGO_URI = process.env.MONGO_URI && 'mongodb://localhost:27017/stock-agdal';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/stock-agdal';
 const DB_PATH   = path.join(__dirname, 'db.json');
 
 // ── Modèles (identiques à server.js) ─────────────────────────────────────────

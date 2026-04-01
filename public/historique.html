@@ -99,6 +99,7 @@ async function initHistorique() {
 
 async function loadHist() {
   allHist = await apiGet('/api/historique');
+  console.log('Historique reçu:', allHist.length, allHist);
   const el = document.getElementById('last-refresh');
   if (el) el.textContent = 'Mis à jour: ' + new Date().toLocaleTimeString('fr-MA');
   applyFilters();

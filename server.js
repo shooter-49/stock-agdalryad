@@ -1,4 +1,6 @@
 require('dotenv').config();
+const dns = require('dns');
+dns.setServers(['8.8.8.8', '8.8.4.4']);
 const express  = require('express');
 const mongoose = require('mongoose');
 const fs       = require('fs');
@@ -20,9 +22,9 @@ app.get('/', (req, res) => res.redirect('/login.html'));
 // ═══════════════════════════════════════════════════════════════════════════════
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/stock-agdal';
 
-mongoose.connect(MONGO_URI)
+mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 5000, connectTimeoutMS: 5000 })
   .then(() => console.log('✅ MongoDB connecté'))
-  .catch(err => { console.error('❌ MongoDB erreur:', err); process.exit(1); });
+  .catch(err => { console.error('⚠️ MongoDB non connecté:', err.message); console.log('📄 Le serveur continue sans base de données — les pages sont accessibles.'); });
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SCHEMAS
@@ -86,6 +88,7 @@ async function addHistorique(user, action, articleId, detail, ancienne, nouvelle
     action, article_id: articleId, detail,
     ancienne_valeur: ancienne || '', nouvelle_valeur: nouvelle || ''
   });
+  console.log(`[DEBUG] Historique créé: ${action} pour article ${articleId} par ${user}`);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -169,6 +172,7 @@ app.post('/api/articles', async (req, res) => {
     const art = await Article.create(articleData);
     await addHistorique(utilisateur || 'Système', 'Ajout article', art.id,
       `Ajout de "${art.designation}"`, '', '');
+    console.log(`[DEBUG] Historique ajouté après POST /api/articles pour ${art.id}`);
     res.json(art);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -181,6 +185,7 @@ app.put('/api/articles/:id', async (req, res) => {
     const updated = await Article.findOneAndUpdate({ id: req.params.id }, updateData, { new: true }).lean();
     await addHistorique(utilisateur || 'Système', 'Modification article', req.params.id,
       `Modification de "${updated.designation}"`, JSON.stringify(ancien), JSON.stringify(updated));
+    console.log(`[DEBUG] Historique ajouté après PUT /api/articles pour ${req.params.id}`);
     res.json(updated);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -192,6 +197,7 @@ app.delete('/api/articles/:id', async (req, res) => {
     await Article.deleteOne({ id: req.params.id });
     await addHistorique(req.query.utilisateur || 'Système', 'Suppression article', req.params.id,
       `Suppression de "${art.designation}"`, JSON.stringify(art), '');
+    console.log(`[DEBUG] Historique ajouté après DELETE /api/articles pour ${req.params.id}`);
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -209,7 +215,7 @@ app.get('/api/mouvements', async (req, res) => {
       if (req.query.date_from) query.date.$gte = req.query.date_from;
       if (req.query.date_to)   query.date.$lte = req.query.date_to + 'T23:59:59';
     }
-    let mouvs = await Mouvement.find(query).sort({ id: -1 }).lean();
+    let mouvs = await Mouvement.find(query).sort({ date: -1 }).lean();
     if (req.query.limit) mouvs = mouvs.slice(0, parseInt(req.query.limit));
     res.json(mouvs);
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -239,6 +245,7 @@ app.post('/api/mouvements', async (req, res) => {
       valide_par: valide_par||utilisateur||'',
       date: date||new Date().toISOString(), utilisateur: utilisateur||'Système'
     });
+    console.log(`[DEBUG] Mouvement créé avec id: ${mouv.id}`);
     await addHistorique(utilisateur||'Système',
       type==='sortie'?'Bon de sortie':"Bon d'entrée", article_id,
       `${type==='sortie'?'Sortie':'Entrée'}: ${qty} ${art.unite} - ${art.designation}`,
@@ -260,7 +267,9 @@ app.get('/api/historique', async (req, res) => {
       if (req.query.date_from) query.date.$gte = req.query.date_from;
       if (req.query.date_to)   query.date.$lte = req.query.date_to + 'T23:59:59';
     }
-    res.json(await Historique.find(query).sort({ id: -1 }).lean());
+    const hist = await Historique.find(query).sort({ date: -1 }).lean();
+    console.log(`[DEBUG] GET /api/historique — nb entrées: ${hist.length}`);
+    res.json(hist);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -311,7 +320,9 @@ app.get('/api/reservations', async (req, res) => {
   try {
     let query = {};
     if (req.query.statut) query.statut = req.query.statut;
-    if (req.query.agent)  query.agent  = req.query.agent;
+    if (req.query.agent) {
+      query.$or = [{ agent: req.query.agent }, { nom_agent: req.query.agent }];
+    }
     res.json(await Reservation.find(query).sort({ id: -1 }).lean());
   } catch(e) { res.status(500).json({ error: e.message }); }
 });

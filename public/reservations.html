@@ -153,7 +153,7 @@ async function loadData() {
     ]);
     // Agent sees only their own
     if (user.role === 'agent') {
-      allReservations = allReservations.filter(r => r.agent === user.username);
+      allReservations = allReservations.filter(r => r.agent === user.username || r.nom_agent === user.nom);
     }
     updateCounts();
     renderNotifBanner();
