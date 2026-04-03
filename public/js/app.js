@@ -132,7 +132,7 @@ function fmtDate(iso) {
   return d.toLocaleDateString('fr-MA') + ' ' + d.toLocaleTimeString('fr-MA', { hour: '2-digit', minute: '2-digit' });
 }
 
-// ===== OFFICIAL HEADER HTML =====
+// ===== OFFICIAL HEADER HTML =====               
 function officialHeaderBand() {
   return `<div class="official-header-band">
     <div class="official-header-inner">
@@ -159,7 +159,10 @@ function topNavbar(pageTitle, pageTitleAr) {
   const user = getUser();
   const roleBadge = { admin: 'badge-admin', responsable: 'badge-responsable', agent: 'badge-agent' }[user.role] || 'badge-agent';
   return `<div class="top-navbar">
-    <div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <button class="hamburger-btn" id="hamburger-btn" onclick="toggleSidebar()" aria-label="Menu">
+        <i class="fa-solid fa-bars"></i>
+      </button>
       <div class="navbar-title">${pageTitle} <span>${pageTitleAr}</span></div>
     </div>
     <div class="navbar-user">
@@ -255,6 +258,24 @@ function pdfAddHeader(doc, type, num) {
   return 58;
 }
 
+// ===== SIDEBAR TOGGLE (mobile) =====
+function toggleSidebar() {
+  const sidebar = document.querySelector('.sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+  if (!sidebar) return;
+  const isOpen = sidebar.classList.toggle('open');
+  if (overlay) overlay.classList.toggle('open', isOpen);
+  document.body.style.overflow = isOpen ? 'hidden' : '';
+}
+
+function closeSidebar() {
+  const sidebar = document.querySelector('.sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+  if (sidebar) sidebar.classList.remove('open');
+  if (overlay) overlay.classList.remove('open');
+  document.body.style.overflow = '';
+}
+
 // ===== INIT PAGE =====
 function initPage(activePage, pageTitle, pageTitleAr, allowedRoles) {
   const user = requireAuth();
@@ -268,50 +289,13 @@ function initPage(activePage, pageTitle, pageTitleAr, allowedRoles) {
 
   document.body.innerHTML = `
     <div id="toast-container"></div>
+    <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
     ${buildSidebar(activePage)}
     <div class="main-content">
       ${topNavbar(pageTitle, pageTitleAr)}
       ${officialHeaderBand()}
       <div class="page-content" id="page-content"></div>
     </div>`;
-
-  // Ajouter bouton hamburger pour mobile
-  const hamburger = document.createElement('button');
-  hamburger.className = 'hamburger-btn';
-  hamburger.innerHTML = '<i class="fa-solid fa-bars"></i>';
-  document.body.appendChild(hamburger);
-
-  // Overlay
-  const overlay = document.createElement('div');
-  overlay.className = 'sidebar-overlay';
-  document.body.appendChild(overlay);
-
-  const sidebar = document.querySelector('.sidebar');
-
-  hamburger.onclick = () => {
-    sidebar.classList.toggle('mobile-open');
-    overlay.classList.toggle('active');
-    hamburger.innerHTML = sidebar.classList.contains('mobile-open')
-      ? '<i class="fa-solid fa-times"></i>'
-      : '<i class="fa-solid fa-bars"></i>';
-  };
-
-  overlay.onclick = () => {
-    sidebar.classList.remove('mobile-open');
-    overlay.classList.remove('active');
-    hamburger.innerHTML = '<i class="fa-solid fa-bars"></i>';
-  };
-
-  // Fermer sidebar quand on clique un lien nav sur mobile
-  document.querySelectorAll('.nav-item').forEach(item => {
-    item.addEventListener('click', () => {
-      if (window.innerWidth <= 768) {
-        sidebar.classList.remove('mobile-open');
-        overlay.classList.remove('active');
-        hamburger.innerHTML = '<i class="fa-solid fa-bars"></i>';
-      }
-    });
-  });
 
   // Load reservations badge (respo/admin only)
   if (['admin','responsable'].includes(user.role)) {
