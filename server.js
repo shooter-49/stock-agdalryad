@@ -31,7 +31,7 @@ mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 5000, connectTimeoutMS: 
 // ═══════════════════════════════════════════════════════════════════════════════
 const User = mongoose.model('User', new mongoose.Schema({
   id: Number, username: { type: String, unique: true },
-  password: String, role: String, nom: String
+  password: String, role: String, nom: String, service: String
 }));
 
 const Category = mongoose.model('Category', new mongoose.Schema({
@@ -99,7 +99,7 @@ app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     const user = await User.findOne({ username, password });
     if (!user) return res.status(401).json({ error: 'Identifiants incorrects / بيانات خاطئة' });
-    res.json({ success: true, user: { id: user.id, username: user.username, role: user.role, nom: user.nom } });
+    res.json({ success: true, user: { id: user.id, username: user.username, role: user.role, nom: user.nom, service: user.service } });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 

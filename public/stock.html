@@ -47,6 +47,7 @@ async function initStock() {
             <option value="">Toutes sections / الكل</option>
             <option value="Voirie">Voirie / الطرق</option>
             <option value="Éclairage Public">Éclairage Public / الإنارة</option>
+            <option value="Bâtiment">Bâtiment / البناء</option>
           </select>
           <select class="form-control" id="filter-cat" style="width:200px">
             <option value="">Toutes catégories</option>
@@ -102,6 +103,15 @@ async function initStock() {
   document.getElementById('filter-status').onchange = (e) => { filterStatus = e.target.value; currentPage = 1; renderTable(); };
 
   await loadData();
+  
+  // Auto-filter for building agents
+  if (user.service === 'batiment') {
+    filterSection = 'Bâtiment';
+    document.getElementById('filter-section').value = 'Bâtiment';
+    populateCatFilter();
+    renderTable();
+  }
+  
   setInterval(loadData, 15000);
 }
 

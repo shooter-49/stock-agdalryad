@@ -13,7 +13,7 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/stock-agda
 const DB_PATH   = path.join(__dirname, 'db.json');
 
 // ── Modèles (identiques à server.js) ─────────────────────────────────────────
-const User        = mongoose.model('User',        new mongoose.Schema({ id:Number, username:String, password:String, role:String, nom:String }));
+const User        = mongoose.model('User',        new mongoose.Schema({ id:Number, username:String, password:String, role:String, nom:String, service:String }));
 const Category    = mongoose.model('Category',    new mongoose.Schema({ id:Number, nom:String, nom_ar:String, section:String }));
 const Article     = mongoose.model('Article',     new mongoose.Schema({ id:String, designation:String, designation_ar:String, categorie_id:Number, section:String, quantite:Number, unite:String, seuil:Number, notes:String }));
 const Mouvement   = mongoose.model('Mouvement',   new mongoose.Schema({ id:Number, type:String, article_id:String, article_designation:String, article_designation_ar:String, article_unite:String, quantite:Number, quantite_avant:Number, quantite_apres:Number, demandeur:String, motif:String, fournisseur:String, valide_par:String, date:String, utilisateur:String, reservation_id:Number }));
